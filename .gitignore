@@ -35,5 +35,6 @@ Thumbs.db
 /.fleet
 /.codex
 .claude
+.agents
 skills-lock.json
 
