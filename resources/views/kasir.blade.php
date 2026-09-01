@@ -32,9 +32,6 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 99px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        @media (max-width: 1023.98px) {
-            #hint-cart-selected { display: none !important; }
-        }
 
         @media (prefers-reduced-motion: no-preference) {
             .anim-fade-up {
@@ -102,7 +99,7 @@
         <aside class="hidden lg:flex flex-col items-center py-5 shrink-0 w-[92px] bg-white border-r border-zinc-200">
             <div class="flex flex-col items-center gap-1.5 px-1">
                 <div class="w-9 h-9 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-black text-sm select-none">K</div>
-                <p class="text-[9px] font-bold text-zinc-500 text-center leading-tight truncate w-full select-none">{{ $kasirData['toko']['nama'] ?? 'Toko PKL' }}</p>
+                <p class="text-[9px] font-semibold text-zinc-400 text-center leading-tight truncate w-full select-none" title="{{ $kasirData['karyawan']['nama'] ?? 'Kasir' }}">{{ $kasirData['karyawan']['nama'] ?? 'Kasir' }}</p>
                 <span id="badge-mock" class="hidden text-[7px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
                     Simulasi
                 </span>
@@ -154,8 +151,8 @@
             <main class="flex-1 flex flex-col min-w-0 px-4 lg:px-8 pt-7 overflow-hidden">
                 <div class="anim-fade-up max-w-5xl w-full mx-auto flex flex-col flex-1 overflow-hidden" style="--i: 1">
 
-                    {{-- TOOLBAR: toolbar mobile (aksi) + gudang + omzet --}}
-                    <div class="flex items-center gap-3">
+                    {{-- TOOLBAR (mobile only): tombol aksi kasir --}}
+                    <div class="lg:hidden flex items-center gap-3">
                         {{-- Tombol aksi mobile-only (muncul di atas area konten karena sidebar tersembunyi) --}}
                         <div class="lg:hidden flex items-center gap-2 shrink-0">
                             <button id="btn-mobile-shortcut" type="button" title="Panduan shortcut (?)" aria-label="Panduan shortcut"
@@ -224,138 +221,130 @@
             {{-- KANAN: KERANJANG --}}
             <aside id="cart-drawer"
                 class="fixed inset-y-0 right-0 z-30 w-[360px] max-w-[92vw] xl:w-[420px] shrink-0 bg-white border-l border-zinc-200 flex flex-col translate-x-full transition-transform duration-300 ease-out lg:static lg:translate-x-0 lg:transition-none">
+                
+                {{-- Header --}}
                 <div class="h-16 shrink-0 px-6 border-b border-zinc-100 flex items-center justify-between">
                     <div class="flex items-center gap-2.5">
-                        <button id="btn-tutup-cart" type="button" title="Tutup keranjang" aria-label="Tutup keranjang"
-                            class="lg:hidden w-8 h-8 -ml-1.5 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
-                                <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
-                            </svg>
-                        </button>
-                        <h2 class="font-bold tracking-tight">Pesanan</h2>
+                        <h2 class="text-xl font-bold tracking-tight text-zinc-900">Pesanan</h2>
                         <span id="badge-cart-count"
-                            class="hidden min-w-6 h-6 px-1.5 rounded-full bg-zinc-900 text-white text-xs font-bold flex items-center justify-center tabular-nums"></span>
-                        <span id="lbl-item-jenis" class="hidden text-xs font-semibold text-zinc-500"></span>
+                            class="hidden min-w-5 h-5 px-1.5 rounded-full bg-zinc-900 text-white text-[11px] font-bold flex items-center justify-center tabular-nums"></span>
                     </div>
-                    <button id="btn-reset"
-                        class="text-xs font-semibold text-zinc-500 hover:text-red-600 transition-colors cursor-pointer">Kosongkan</button>
+                    <div class="flex items-center gap-2">
+                        <button id="btn-reset" type="button" title="Kosongkan keranjang"
+                            class="text-xs font-semibold text-zinc-400 hover:text-red-600 transition-colors cursor-pointer px-1 py-0.5">Kosongkan</button>
+                    </div>
                 </div>
 
-                <p id="hint-cart-selected" class="hidden shrink-0 bg-zinc-900 text-white text-[11px] font-semibold px-6 py-2 flex items-center gap-1.5">
-                    <span class="tabular-nums font-bold" id="hint-cart-pos"></span>
-                    <span class="text-zinc-300 font-normal">·</span>
-                    <span>↑↓ pindah · +/− qty · R satuan · Del hapus · Esc batal</span>
-                </p>
+                {{-- Daftar Item Keranjang --}}
+                <div id="cart-items" class="flex-1 overflow-y-auto px-6 py-3 space-y-2.5"></div>
 
-                <div id="cart-items" class="flex-1 overflow-y-auto px-6 pt-4 pb-20 space-y-3"></div>
-
-                <div class="shrink-0 border-t border-zinc-200 bg-zinc-50/80 px-6 pt-5 pb-6 space-y-4">
-
-                    <div class="space-y-2.5 text-sm">
+                {{-- Ringkasan & Pembayaran --}}
+                <div class="shrink-0 border-t border-zinc-200 bg-white px-6 pt-4 pb-5 space-y-3.5">
+                    {{-- Summary Breakdown --}}
+                    <div class="space-y-1.5 text-sm">
                         <div class="flex justify-between items-center">
-                            <span class="text-zinc-600">Subtotal</span>
-                            <span id="lbl-total" class="font-bold tabular-nums">Rp 0</span>
+                            <span class="text-zinc-500 font-medium">Subtotal</span>
+                            <span id="lbl-total" class="font-bold text-zinc-900 tabular-nums">Rp 0</span>
                         </div>
-                        <div class="flex justify-between items-center gap-3">
-                            <span class="text-zinc-600">Diskon (%)</span>
-                            <input id="input-diskon" type="text" inputmode="numeric" placeholder="0"
-                                class="w-20 text-right text-sm font-semibold bg-white border border-zinc-200 rounded-lg px-3 py-1.5 tabular-nums placeholder:font-normal placeholder:text-zinc-300 focus:outline-none focus:border-zinc-900 transition-colors">
+                        <div id="row-diskon-nota" class="hidden flex justify-between items-center gap-3">
+                            <span class="text-zinc-500 font-medium">Diskon</span>
+                            <div class="flex items-center gap-2">
+                                <input id="input-diskon" type="text" inputmode="numeric" placeholder="0%"
+                                    class="w-14 text-right text-xs font-semibold bg-white border border-zinc-200 rounded-md px-2 py-1 tabular-nums placeholder:font-normal placeholder:text-zinc-300 focus:outline-none focus:border-zinc-900 transition-colors" title="Diskon dalam %">
+                                <span id="lbl-diskon-nota" class="font-bold text-zinc-900 tabular-nums text-sm">-Rp 0</span>
+                            </div>
                         </div>
                         <div id="row-potongan-barang" class="hidden flex justify-between items-center">
-                            <span class="text-zinc-600">Potongan Barang</span>
-                            <span id="lbl-potongan-barang" class="font-semibold text-red-500 tabular-nums"></span>
+                            <span class="text-zinc-500 font-medium">Potongan Barang</span>
+                            <span id="lbl-potongan-barang" class="font-bold text-zinc-900 tabular-nums"></span>
                         </div>
-                        <div id="row-diskon-nota" class="hidden flex justify-between items-center">
-                            <span class="text-zinc-600">Diskon Nota</span>
-                            <span id="lbl-diskon-nota" class="font-semibold text-red-500 tabular-nums"></span>
+                        <div class="border-t border-zinc-200/80 pt-2 mt-1.5 flex justify-between items-baseline">
+                            <span class="font-bold text-zinc-900 text-base">Total</span>
+                            <span id="lbl-neto" class="inline-block origin-right text-xl font-black tracking-tight text-zinc-900 tabular-nums">Rp 0</span>
                         </div>
-                        <div class="flex justify-between items-baseline border-t border-zinc-100 pt-3">
-                            <span class="font-bold">Total</span>
-                            <span id="lbl-neto" class="inline-block origin-right text-2xl font-black tracking-tight tabular-nums">Rp 0</span>
-                        </div>
-                        <p id="rangkuman-bayaran" class="hidden flex justify-between items-center text-sm tabular-nums"></p>
                     </div>
 
-                    <button id="btn-toggle-payment" type="button"
-                        class="w-full flex items-center justify-between text-[11px] font-bold text-zinc-500 hover:text-zinc-600 transition-colors py-1.5 cursor-pointer select-none border-t border-zinc-100 pt-3.5">
-                        <span>PILIHAN & RINCIAN PEMBAYARAN</span>
-                        <svg id="icon-toggle-payment" class="w-4 h-4 transition-transform duration-200" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4 6l4 4 4-4"/>
-                        </svg>
-                    </button>
+                    {{-- Payments Section --}}
+                    <div class="pt-2 border-t border-zinc-200/80 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-bold text-zinc-900 tracking-tight">Pembayaran</h3>
+                            <button id="btn-toggle-payment" type="button" class="hidden" aria-hidden="true">
+                                <svg id="icon-toggle-payment" class="w-4 h-4 hidden" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>
+                            </button>
+                        </div>
 
-                    <div id="payment-details-container" class="space-y-4 hidden">
-                        <div class="flex gap-1 bg-zinc-200/60 rounded-xl p-1">
-                            @foreach (['tunai' => 'Tunai', 'qris' => 'QRIS', 'transfer' => 'Transfer'] as $val => $label)
-                                <label class="flex-1 flex items-center justify-center gap-1.5 text-sm font-semibold text-zinc-600 rounded-lg py-2 cursor-pointer transition
-                                              has-checked:bg-white has-checked:text-zinc-900 has-checked:shadow-xs">
+                        <div class="flex gap-1 bg-zinc-100 rounded-lg p-1">
+                            @foreach ([
+                                'tunai' => 'Tunai',
+                                'transfer' => 'Transfer',
+                                'qris' => 'QRIS',
+                            ] as $val => $label)
+                                <label class="payment-method-pill flex-1 flex items-center justify-center text-xs font-bold rounded-md py-1.5 px-1 cursor-pointer transition-all text-center select-none
+                                              {{ $val === 'tunai' ? 'bg-zinc-900 text-white shadow-xs' : 'text-zinc-600 hover:text-zinc-900' }}
+                                              has-checked:bg-zinc-900 has-checked:text-white has-checked:shadow-xs">
                                     <input type="radio" name="jenis_pembayaran" value="{{ $val }}"
                                         class="hidden" {{ $val === 'tunai' ? 'checked' : '' }}>
-                                    @if ($val === 'tunai')
-                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>
-                                        </svg>
-                                    @elseif ($val === 'qris')
-                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/><path d="M21 14v.01M17 21h4"/>
-                                        </svg>
-                                    @else
-                                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M3 21h18"/><path d="M3 10h18"/><path d="M5 6l7 -3l7 3"/><path d="M4 10v11"/><path d="M20 10v11"/><path d="M8 14v3"/><path d="M12 14v3"/><path d="M16 14v3"/>
-                                        </svg>
-                                    @endif
-                                    {{ $label }}
+                                    <span>{{ $label }}</span>
                                 </label>
                             @endforeach
                         </div>
 
-                        <div id="row-tunai" class="space-y-2.5 text-sm">
-                            <div class="flex justify-between items-center">
-                                <span class="text-zinc-600">Uang diterima</span>
-                                <input id="input-bayar" type="text" inputmode="numeric" placeholder="Rp 0"
-                                    class="w-32 text-right text-sm font-semibold bg-white border border-zinc-200 rounded-lg px-3 py-1.5 tabular-nums placeholder:font-normal placeholder:text-zinc-300 focus:outline-none focus:border-zinc-900 transition-colors">
-                            </div>
-                            <button id="btn-uang-pas" type="button"
-                                class="w-full text-xs font-semibold text-zinc-600 bg-white border border-zinc-200 hover:border-zinc-900 hover:text-zinc-900 rounded-lg py-2 tabular-nums transition-colors cursor-pointer">Uang pas</button>
-                            <div class="flex justify-between items-center">
-                                <span class="text-zinc-600">Kembalian</span>
-                                <span id="lbl-kembalian" class="font-bold tabular-nums">Rp 0</span>
-                            </div>
-                        </div>
-
-                        {{-- QRIS --}}
-                        <div id="row-qris" style="display:none">
-                            <div class="bg-white border border-zinc-200 rounded-xl p-4 flex items-center gap-4">
-                                <img src="{{ asset('img/pay/qris-dummy.png') }}" alt="Kode QRIS"
-                                    class="w-24 h-24 rounded-lg border border-zinc-100 [image-rendering:pixelated]">
-                                <div class="min-w-0">
-                                    <img src="{{ asset('img/pay/qris.svg') }}" alt="QRIS" class="h-5 mb-1.5">
-                                    <p class="text-xs font-semibold text-zinc-900">Scan untuk membayar</p>
-                                    <p class="text-xs text-zinc-500 mt-0.5">Kode contoh, bukan pembayaran sungguhan</p>
+                        {{-- Details per payment method --}}
+                        <div id="payment-details-container" class="space-y-2.5 pt-0.5">
+                            <div id="row-tunai" class="space-y-2 text-xs">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-zinc-600 font-medium">Uang diterima</span>
+                                    <input id="input-bayar" type="text" inputmode="numeric" placeholder="Rp 0"
+                                        class="w-32 text-right text-xs font-bold bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 tabular-nums placeholder:font-normal placeholder:text-zinc-300 focus:outline-none focus:border-zinc-900 transition-colors">
+                                </div>
+                                <div class="flex justify-between items-center gap-2">
+                                    <button id="btn-uang-pas" type="button"
+                                        class="flex-1 text-xs font-semibold text-zinc-700 bg-white border border-zinc-200 hover:border-zinc-900 hover:text-zinc-900 rounded-lg py-1.5 tabular-nums transition-colors cursor-pointer">
+                                        Uang pas
+                                    </button>
+                                    <span id="lbl-kembalian" class="font-bold tabular-nums text-xs text-right shrink-0">Rp 0</span>
                                 </div>
                             </div>
-                        </div>
 
-                        {{-- Transfer --}}
-                        <div id="row-transfer" style="display:none" class="grid grid-cols-2 gap-2">
-                            @foreach (['bca' => 'BCA', 'mandiri' => 'Mandiri', 'bri' => 'BRI', 'bni' => 'BNI'] as $kode => $nama)
-                                <label class="bank-opt bg-white border border-zinc-200 rounded-xl px-3 py-2.5 flex items-center justify-center cursor-pointer transition
-                                              hover:border-zinc-400 has-checked:border-zinc-900 has-checked:ring-1 has-checked:ring-zinc-900">
-                                    <input type="radio" name="bank_transfer" value="{{ $nama }}"
-                                        class="hidden" {{ $kode === 'bca' ? 'checked' : '' }}>
-                                    <img src="{{ asset('img/pay/' . $kode . '.svg') }}" alt="{{ $nama }}" class="h-5 max-w-full object-contain">
-                                </label>
-                            @endforeach
+                            {{-- QRIS --}}
+                            <div id="row-qris" style="display:none">
+                                <div class="bg-white border border-zinc-200 rounded-xl p-3 flex items-center gap-3">
+                                    <img src="{{ asset('img/pay/qris-dummy.png') }}" alt="Kode QRIS"
+                                        class="w-18 h-18 rounded-lg border border-zinc-200 [image-rendering:pixelated] grayscale contrast-125">
+                                    <div class="min-w-0 flex-1">
+                                        <img src="{{ asset('img/pay/qris.svg') }}" alt="QRIS" class="h-4 mb-1 grayscale">
+                                        <p class="text-xs font-bold text-zinc-900">Scan QRIS</p>
+                                        <p class="text-[11px] text-zinc-500 mt-0.5 leading-tight">Gopay, OVO, Dana, ShopeePay, BCA QR</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{-- Transfer --}}
+                            <div id="row-transfer" style="display:none" class="grid grid-cols-4 gap-1.5">
+                                @foreach (['bca' => 'BCA', 'mandiri' => 'Mandiri', 'bri' => 'BRI', 'bni' => 'BNI'] as $kode => $nama)
+                                    <label class="bank-opt bg-white border border-zinc-200 rounded-lg p-2 flex items-center justify-center cursor-pointer transition
+                                                  hover:border-zinc-400 has-checked:border-zinc-900 has-checked:ring-1 has-checked:ring-zinc-900
+                                                  has-checked:[&_img]:grayscale-0 has-checked:[&_img]:opacity-100">
+                                        <input type="radio" name="bank_transfer" value="{{ $nama }}"
+                                            class="hidden" {{ $kode === 'bca' ? 'checked' : '' }}>
+                                        <img src="{{ asset("img/pay/{$kode}.svg") }}" alt="{{ $nama }}"
+                                            class="h-5 grayscale opacity-70 transition-all">
+                                    </label>
+                                @endforeach
+                            </div>
                         </div>
                     </div>
 
-                    <div class="flex gap-2.5">
+                    {{-- Actions --}}
+                    <div class="space-y-2 pt-0.5">
                         <button id="btn-preview-struk" type="button"
-                            class="flex-1 border border-zinc-200 hover:border-zinc-900 hover:bg-zinc-50 active:scale-[0.99] text-zinc-700 font-bold rounded-xl py-3.5 text-sm transition-colors cursor-pointer">Preview Struk</button>
+                            class="w-full border border-zinc-200 hover:border-zinc-900 hover:bg-zinc-100 active:scale-[0.99] text-zinc-700 font-bold rounded-xl py-2 text-xs transition-colors cursor-pointer">
+                            Pratinjau Struk
+                        </button>
                         <button id="btn-bayar" type="button"
-                            class="flex-1 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none text-white text-sm font-black rounded-xl py-3.5 tabular-nums transition cursor-pointer shadow-lg shadow-zinc-900/20 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-zinc-900/25">
-                        Bayar
-                    </button>
+                            class="w-full bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] disabled:opacity-40 disabled:pointer-events-none text-white text-sm font-black rounded-xl py-3.5 tracking-wide tabular-nums transition cursor-pointer shadow-lg shadow-zinc-900/15 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-zinc-900/25">
+                            Bayar
+                        </button>
                     </div>
                 </div>
             </aside>

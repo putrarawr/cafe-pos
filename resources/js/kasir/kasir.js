@@ -32,7 +32,7 @@ const state = {
     bankTransfer: 'BCA',
     bayar: 0,
     isUangPas: false,
-    paymentExpanded: false,
+    paymentExpanded: true,
 };
 
 const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -280,14 +280,14 @@ function resetTransaksi() {
     document.querySelectorAll('input[name="bank_transfer"]').forEach((radio) => {
         radio.checked = radio.value === 'BCA';
     });
-    togglePaymentDetails(false);
+    renderPaymentMethodPills();
     render();
 }
 
 function togglePaymentDetails(forceState) {
     const container = document.getElementById('payment-details-container');
     const chevron = document.getElementById('icon-toggle-payment');
-    if (!container || !chevron) return;
+    if (!container) return;
 
     if (forceState !== undefined) {
         state.paymentExpanded = forceState;
@@ -297,10 +297,10 @@ function togglePaymentDetails(forceState) {
 
     if (state.paymentExpanded) {
         container.classList.remove('hidden');
-        chevron.classList.add('rotate-180');
+        if (chevron) chevron.classList.add('rotate-180');
     } else {
         container.classList.add('hidden');
-        chevron.classList.remove('rotate-180');
+        if (chevron) chevron.classList.remove('rotate-180');
     }
 }
 
@@ -574,12 +574,12 @@ function tampilkanStruk(payload) {
             if (isBonus) {
                 return `
                     <div class="pl-4 border-l-2 border-zinc-400 ml-2 -mt-1">
-                        <p class="font-bold text-xs text-zinc-900 leading-snug">${escapeHtml(nama)}</p>
+                        <p class="font-semibold text-xs text-zinc-600 italic leading-snug">${escapeHtml(nama)}</p>
                         <div class="flex justify-between items-start text-xs leading-normal">
-                            <span class="text-zinc-700">${d.jumlah} ${escapeHtml(d.satuan)} <span class="font-bold">(GRATIS${namaPromo ? ` • ${escapeHtml(namaPromo)}` : ''})</span></span>
+                            <span class="text-zinc-600">${d.jumlah} ${escapeHtml(d.satuan)} <span class="font-bold italic">(GRATIS${namaPromo ? ` • ${escapeHtml(namaPromo)}` : ''})</span></span>
                             <div class="text-right">
-                                <span class="font-bold text-xs text-zinc-900">${rupiah(d.subtotal)}</span>
-                                <div class="text-[10px] font-bold text-zinc-800 mt-0.5">[BONUS]</div>
+                                <span class="font-bold text-xs text-zinc-600">${rupiah(d.subtotal)}</span>
+                                <div class="text-[10px] font-bold text-zinc-700 mt-0.5">[BONUS]</div>
                             </div>
                         </div>
                     </div>
@@ -588,14 +588,16 @@ function tampilkanStruk(payload) {
 
             return `
                 <div class="space-y-0.5">
-                    <p class="font-bold text-sm text-zinc-900 leading-snug">${escapeHtml(nama)}</p>
+                    <div class="flex items-baseline justify-between gap-3">
+                        <p class="font-bold text-sm text-zinc-900 leading-snug">${idx + 1}. ${escapeHtml(nama)}</p>
+                        ${potonganItem > 0
+                            ? `<span class="text-xs font-semibold text-red-500 shrink-0">potongan -${potonganItemPersen}%</span>`
+                            : ''}
+                    </div>
                     <div class="flex justify-between items-start text-xs leading-normal">
                         <span class="text-zinc-700">${d.jumlah} ${escapeHtml(d.satuan)} x ${rupiah(hargaUnit)}</span>
                         <div class="text-right">
                             <span class="font-bold text-sm text-zinc-900">${rupiah(d.subtotal)}</span>
-                            ${potonganItem > 0
-                                ? `<div class="text-xs font-normal text-zinc-600 mt-0.5">potongan -${potonganItemPersen}%</div>`
-                                : ''}
                         </div>
                     </div>
                 </div>
@@ -1300,37 +1302,41 @@ function renderCart() {
     prevCartCount = state.cart.length;
 
     if (state.cart.length === 0) {
-        wrap.innerHTML = `<div class="h-full flex flex-col items-center justify-center text-center py-16 px-4">
-            <svg class="w-10 h-10 text-zinc-200 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M6 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/>
-                <path d="M17 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/>
-                <path d="M17 17h-11v-14h-2"/>
-                <path d="M6 5l14 1l-1 7h-13"/>
-            </svg>
-            <p class="text-sm font-bold text-zinc-600">Belum ada pesanan</p>
-            <p class="text-xs text-zinc-500 mt-1">Pilih produk di sebelah kiri</p>
+        wrap.innerHTML = `<div class="h-full flex flex-col items-center justify-center text-center py-12 px-4">
+            <div class="w-12 h-12 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center mb-3">
+                <svg class="w-6 h-6 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/>
+                    <path d="M17 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/>
+                    <path d="M17 17h-11v-14h-2"/>
+                    <path d="M6 5l14 1l-1 7h-13"/>
+                </svg>
+            </div>
+            <p class="text-sm font-bold text-zinc-700">Belum ada pesanan</p>
+            <p class="text-xs text-zinc-400 mt-0.5">Pilih produk di sebelah kiri untuk menambahkan</p>
         </div>`;
     } else {
         wrap.innerHTML = state.cart
             .map((i, idx) => {
                 if (i.is_bonus) {
-                    return `<div data-cart-row="${idx}" tabindex="-1" class="relative py-2.5 px-3 border border-zinc-200 bg-zinc-100/60 rounded-xl space-y-1.5">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="flex items-center gap-1.5 min-w-0 flex-1">
-                                <span class="text-[10px] font-bold text-zinc-900 bg-zinc-200 border border-zinc-300 px-1.5 py-0.5 rounded-md shrink-0">[BONUS]</span>
-                                <p class="text-xs font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
+                    return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/90 rounded-2xl p-3 shadow-2xs space-y-2 transition-colors duration-150">
+                        <div class="flex items-start gap-3">
+                            <div class="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-zinc-100 border border-zinc-200 flex items-center justify-center text-xs font-black select-none text-zinc-700">
+                                BNS
                             </div>
-                        </div>
-                        <div class="flex items-center justify-between gap-2 text-xs">
-                            <span class="text-zinc-700 font-bold">${i.jumlah} ${i.satuan} (GRATIS)</span>
-                            <span class="font-black text-zinc-900 tabular-nums">Rp 0</span>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-[10px] font-bold text-zinc-900 bg-zinc-200 border border-zinc-300 px-1.5 py-0.5 rounded-md shrink-0">[BONUS]</span>
+                                    <p class="text-sm font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
+                                </div>
+                                <p class="text-xs text-zinc-500 mt-0.5">${i.jumlah} ${i.satuan} (GRATIS)</p>
+                                <p class="text-sm font-black text-zinc-900 tabular-nums mt-1">Rp 0</p>
+                            </div>
                         </div>
                     </div>`;
                 }
 
                 const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id));
                 const units = barang ? getUnitsForBarang(barang) : [{ satuan: i.satuan, harga_jual: i.harga }];
-
                 const selectedUnitObj = units.find((u) => u.satuan === i.satuan) ?? units[0];
 
                 const customUnitOptionsHtml = units
@@ -1349,41 +1355,55 @@ function renderCart() {
                     .join('');
 
                 const currentHarga = i.harga ?? selectedUnitObj.harga_jual;
+                const fotoUrl = barang?.foto || barang?.gambar || null;
+                const thumbHtml = fotoUrl
+                    ? `<img src="${fotoUrl}" alt="${escapeHtml(i.nama_barang)}" class="w-full h-full object-cover rounded-full">`
+                    : inisial(i.nama_barang);
 
-                return `<div data-cart-row="${idx}" tabindex="-1" class="relative py-3 px-2 border-b border-zinc-100 last:border-0 space-y-2 transition-colors duration-150 ${cartIdx === idx ? 'bg-zinc-50 ring-2 ring-zinc-900 rounded-xl' : ''}">
-                    ${cartIdx === idx ? '<span class="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-zinc-900"></span>' : ''}
-                    <div class="flex items-center gap-2.5">
-                        ${cartIdx === idx ? `<span class="shrink-0 mt-0.5 text-[10px] font-bold bg-zinc-900 text-white rounded-md px-1.5 py-0.5 tabular-nums">${idx + 1}/${state.cart.length}</span>` : ''}
-                        <div class="w-10 h-10 shrink-0 rounded-lg ${tileTint(i.nama_barang)} flex items-center justify-center text-xs font-black select-none">${inisial(i.nama_barang)}</div>
-                        <p class="text-sm font-bold text-zinc-900 leading-snug truncate flex-1" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
-                        <button data-del="${i.barang_id}" type="button" class="text-zinc-300 hover:text-red-600 font-bold px-1 transition-colors cursor-pointer text-base leading-none shrink-0" title="Hapus item">×</button>
-                    </div>
-                    <div class="flex items-center justify-between gap-2">
-                        <div class="relative min-w-0 flex-1" data-unit-dropdown-wrapper="${i.barang_id}">
-                            <button type="button" data-unit-dropdown-btn="${i.barang_id}"
-                                class="w-full max-w-[185px] flex items-center justify-between gap-1.5 text-xs font-bold text-zinc-800 bg-zinc-100/90 hover:bg-zinc-200/70 border border-zinc-200/90 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 transition-all cursor-pointer">
-                                <span class="truncate">${selectedUnitObj.satuan} <span class="text-zinc-500 font-normal">(${rupiah(currentHarga)})</span></span>
-                                <svg data-unit-dropdown-chevron="${i.barang_id}" class="w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform duration-200" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M4 6l4 4 4-4"/>
-                                </svg>
-                            </button>
-                            <div data-unit-dropdown-menu="${i.barang_id}"
-                                class="hidden anim-scale-in absolute left-0 top-full mt-1.5 min-w-[185px] w-max max-w-[240px] max-h-52 overflow-y-auto z-40 bg-white border border-zinc-200 rounded-xl shadow-xl shadow-zinc-950/10 p-1 space-y-0.5">
-                                ${customUnitOptionsHtml}
+                return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/90 hover:border-zinc-300 rounded-2xl p-3 shadow-2xs space-y-2 transition-all duration-150 ${cartIdx === idx ? 'ring-2 ring-zinc-900 bg-zinc-50/50' : ''}">
+                    <div class="flex items-start gap-3">
+                        <div class="w-12 h-12 rounded-full overflow-hidden shrink-0 ${tileTint(i.nama_barang)} flex items-center justify-center text-xs font-black select-none border border-zinc-200 shadow-2xs">
+                            ${thumbHtml}
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-start justify-between gap-1">
+                                <p class="text-sm font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
+                                <button data-del="${i.barang_id}" type="button" class="text-zinc-400 hover:text-red-600 transition-colors p-0.5 cursor-pointer shrink-0 -mr-1" title="Hapus item">
+                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div class="relative mt-0.5" data-unit-dropdown-wrapper="${i.barang_id}">
+                                <button type="button" data-unit-dropdown-btn="${i.barang_id}"
+                                    class="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer group/unit">
+                                    <span>${selectedUnitObj.satuan}</span>
+                                    <svg data-unit-dropdown-chevron="${i.barang_id}" class="w-3 h-3 text-zinc-400 group-hover/unit:text-zinc-700 transition-transform duration-200" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M4 6l4 4 4-4"/>
+                                    </svg>
+                                </button>
+                                <div data-unit-dropdown-menu="${i.barang_id}"
+                                    class="hidden anim-scale-in absolute left-0 top-full mt-1.5 min-w-[185px] w-max max-w-[240px] max-h-52 overflow-y-auto z-40 bg-white border border-zinc-200 rounded-xl shadow-xl shadow-zinc-950/10 p-1 space-y-0.5">
+                                    ${customUnitOptionsHtml}
+                                </div>
+                            </div>
+
+                            <div class="flex items-center justify-between gap-2 mt-2">
+                                <p class="text-sm font-black text-zinc-900 tabular-nums">${rupiah(currentHarga)}</p>
+                                <div class="flex items-center gap-1 bg-zinc-50 border border-zinc-200/90 rounded-full px-1.5 py-0.5 shrink-0 shadow-2xs">
+                                    <button data-plus="${i.barang_id}" type="button" class="w-5 h-5 rounded-full hover:bg-white text-zinc-700 font-bold transition flex items-center justify-center cursor-pointer text-xs select-none" title="Tambah">+</button>
+                                    <input data-qty="${i.barang_id}" type="number" min="1" value="${i.jumlah}"
+                                        class="w-6 text-center text-xs font-bold tabular-nums bg-transparent focus:outline-none focus:bg-white rounded py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                                    <button data-minus="${i.barang_id}" type="button" class="w-5 h-5 rounded-full hover:bg-white text-zinc-700 font-bold transition flex items-center justify-center cursor-pointer text-xs select-none" title="Kurangi">−</button>
+                                </div>
                             </div>
                         </div>
-                        <div class="flex items-center gap-0.5 bg-zinc-100 rounded-lg p-0.5 shrink-0">
-                            <button data-minus="${i.barang_id}" type="button" class="w-6 h-6 rounded-md hover:bg-white hover:shadow-xs text-zinc-600 font-bold transition flex items-center justify-center cursor-pointer text-xs">−</button>
-                            <input data-qty="${i.barang_id}" type="number" min="1" value="${i.jumlah}"
-                                class="w-8 text-center text-xs font-bold tabular-nums bg-transparent focus:outline-none focus:bg-white focus:shadow-xs rounded-md py-0.5
-                                       [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                            <button data-plus="${i.barang_id}" type="button" class="w-6 h-6 rounded-md hover:bg-white hover:shadow-xs text-zinc-600 font-bold transition flex items-center justify-center cursor-pointer text-xs">+</button>
-                        </div>
-                        <p class="text-xs font-bold text-zinc-900 tabular-nums text-right shrink-0 min-w-[70px]">${rupiah(subtotalItem(i))}</p>
                     </div>
                     ${Number(i.diskon || 0) > 0
-                        ? `<div class="flex items-center justify-end">
-                            <span class="text-[11px] text-red-500 tabular-nums font-semibold">diskon −${persenPotongan(i.diskon, (i.harga_asli ?? i.harga) * i.jumlah)}%</span>
+                        ? `<div class="flex items-center justify-between pt-1.5 border-t border-zinc-100 text-[11px]">
+                            <span class="text-zinc-400 font-medium">Potongan barang</span>
+                            <span class="text-zinc-700 font-semibold tabular-nums">−${rupiah(i.diskon * i.jumlah)} (${persenPotongan(i.diskon, (i.harga_asli ?? i.harga) * i.jumlah)}%)</span>
                         </div>`
                         : ''}
                 </div>`;
@@ -1403,22 +1423,8 @@ function renderCart() {
         badgeFloat.textContent = totalItem;
     }
 
-    const lblItemJenis = document.getElementById('lbl-item-jenis');
-    if (lblItemJenis) {
-        lblItemJenis.classList.toggle('hidden', state.cart.length === 0);
-        lblItemJenis.textContent = `· ${state.cart.length} barang`;
-    }
-
-    const hintCart = document.getElementById('hint-cart-selected');
-    const hintCartPos = document.getElementById('hint-cart-pos');
-    if (hintCart) {
-        const aktif = cartIdx >= 0 && state.cart.length > 0;
-        hintCart.classList.toggle('hidden', !aktif);
-        if (hintCartPos && aktif) hintCartPos.textContent = `${cartIdx + 1}/${state.cart.length}`;
-    }
-
     const lblTotal = document.getElementById('lbl-total');
-    if (lblTotal) lblTotal.textContent = rupiah(totalKotor());
+    if (lblTotal) lblTotal.textContent = rupiah(totalNormal());
 
     const lblNeto = document.getElementById('lbl-neto');
     if (lblNeto) {
@@ -1444,7 +1450,7 @@ function renderCart() {
     const lblDiskonNota = document.getElementById('lbl-diskon-nota');
     if (rowDiskonNota && lblDiskonNota) {
         rowDiskonNota.classList.toggle('hidden', potonganNota <= 0);
-        if (potonganNota > 0) lblDiskonNota.textContent = `- ${rupiah(potonganNota)}`;
+        lblDiskonNota.textContent = potonganNota > 0 ? `- ${rupiah(potonganNota)}` : '-Rp 0';
     }
 
     if (state.isUangPas) {
@@ -1478,30 +1484,6 @@ function renderCart() {
         }
     }
 
-    const rangkuman = document.getElementById('rangkuman-bayaran');
-    if (rangkuman) {
-        const bayarTunai = state.jenisPembayaran === 'tunai';
-        const tunaiBerisi = bayarTunai && state.bayar > 0;
-        if (!bayarTunai || tunaiBerisi) {
-            rangkuman.classList.remove('hidden');
-            let kiri, kanan;
-            if (bayarTunai) {
-                const kurang = state.bayar < totalNeto();
-                kiri = kurang ? `<span class="text-red-600 font-bold">Kurang</span>` : `<span class="text-zinc-600">Kembalian</span>`;
-                kanan = `<span class="${kurang ? 'text-red-600' : 'text-emerald-600'} font-bold">${kurang ? rupiah(totalNeto() - state.bayar) : rupiah(kembalian())}</span>`;
-            } else {
-                const labelPembayaran = state.jenisPembayaran === 'transfer'
-                    ? `Transfer ${state.bankTransfer}`
-                    : state.jenisPembayaran.toUpperCase() === 'QRIS' ? 'QRIS' : 'Tunai';
-                kiri = `<span class="text-zinc-600">${labelPembayaran}</span>`;
-                kanan = `<span class="font-bold">${rupiah(totalNeto())}</span>`;
-            }
-            rangkuman.innerHTML = `<span>${kiri}</span><span>${kanan}</span>`;
-        } else {
-            rangkuman.classList.add('hidden');
-        }
-    }
-
     const rowTunai = document.getElementById('row-tunai');
     const rowQris = document.getElementById('row-qris');
     const rowTransfer = document.getElementById('row-transfer');
@@ -1516,9 +1498,11 @@ function renderCart() {
             btnBayar.disabled = true;
         } else {
             btnBayar.disabled = kosong;
-            btnBayar.textContent = kosong ? 'Bayar' : `Bayar ${rupiah(totalNeto())}`;
+            btnBayar.textContent = kosong ? 'Bayar' : `Bayar · ${rupiah(totalNeto())}`;
         }
     }
+
+    renderPaymentMethodPills();
 }
 
 function render() {
@@ -1820,12 +1804,32 @@ function bukaCart() {
 }
 
 function tutupCart() {
+    if (window.innerWidth >= 1024) {
+        if (state.cart.length > 0) {
+            bukaModalReset();
+        }
+        return;
+    }
     const aside = document.getElementById('cart-drawer');
     const backdrop = document.getElementById('backdrop-cart');
     const btn = document.getElementById('btn-buka-cart');
     if (aside) aside.classList.add('translate-x-full');
     if (backdrop) backdrop.classList.add('hidden');
     if (btn) btn.classList.remove('hidden');
+}
+
+function renderPaymentMethodPills() {
+    document.querySelectorAll('.payment-method-pill').forEach((pill) => {
+        const input = pill.querySelector('input[name="jenis_pembayaran"]');
+        if (!input) return;
+        const isSelected = input.value === state.jenisPembayaran;
+        input.checked = isSelected;
+        if (isSelected) {
+            pill.className = 'payment-method-pill flex-1 flex items-center justify-center text-xs font-bold rounded-md py-1.5 px-1 cursor-pointer transition-all text-center select-none bg-zinc-900 text-white shadow-xs';
+        } else {
+            pill.className = 'payment-method-pill flex-1 flex items-center justify-center text-xs font-bold rounded-md py-1.5 px-1 cursor-pointer transition-all text-center select-none text-zinc-600 hover:text-zinc-900';
+        }
+    });
 }
 
 // ------------------------- INIT -------------------------
@@ -2306,6 +2310,7 @@ async function init() {
         radio.addEventListener('change', (e) => {
             state.jenisPembayaran = e.target.value;
             state.isUangPas = false;
+            renderPaymentMethodPills();
             renderCart();
         });
     });
@@ -2760,7 +2765,6 @@ async function init() {
 
     // drawer keranjang (mobile)
     document.getElementById('btn-buka-cart')?.addEventListener('click', bukaCart);
-    document.getElementById('btn-tutup-cart')?.addEventListener('click', tutupCart);
     document.getElementById('backdrop-cart')?.addEventListener('click', tutupCart);
 
     // Konfirmasi keluar/refresh bila masih ada pesanan belum dibayar
