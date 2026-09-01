@@ -478,7 +478,6 @@ async function simpanTransaksi(payload) {
             if (b && b.stok[d.gudang_id] != null) b.stok[d.gudang_id] -= (d.jumlah * faktor);
         }
         resetTransaksi();
-        muatRingkasanHari();
     } catch (e) {
         toast(e.message ?? 'Gagal menyimpan transaksi', true);
         renderCart();
@@ -735,21 +734,6 @@ function updateJamHeader() {
     }).format(now);
     if (elWaktu) elWaktu.textContent = waktu;
     if (elTanggal) elTanggal.textContent = tanggal;
-}
-
-async function muatRingkasanHari() {
-    const elTotal = document.getElementById('omzet-hari-ini-total');
-    const elLabel = document.getElementById('omzet-hari-ini-label');
-    if (!elTotal && !elLabel) return;
-    try {
-        const kasirLogin = window.KASIR_DATA?.karyawan?.nama;
-        const res = await getRiwayat(tanggalHariIni(), { limit: 1, kasir: kasirLogin || undefined });
-        const s = res?.summary ?? { jumlah: 0, total_neto: 0 };
-        if (elTotal) elTotal.textContent = rupiah(s.total_neto ?? 0);
-        if (elLabel) elLabel.textContent = `${s.jumlah ?? 0} transaksi hari ini`;
-    } catch (_) {
-        // abaikan, biarkan tampilan default
-    }
 }
 
 let riwayatTanggalAktif = null;
@@ -1112,13 +1096,6 @@ function renderProduk() {
     const animate = key !== lastProdukKey;
     lastProdukKey = key;
 
-    const labelGudang = document.getElementById('label-gudang-aktif');
-    const labelGudangNama = document.getElementById('label-gudang-aktif-nama');
-    if (labelGudang && labelGudangNama) {
-        labelGudang.classList.toggle('hidden', !state.gudangId);
-        labelGudangNama.textContent = namaGudangSekarang();
-    }
-
     if (list.length === 0) {
         grid.innerHTML = `<div class="col-span-full text-center py-20">
             <p class="text-sm font-semibold text-zinc-600">Barang tidak ditemukan</p>
@@ -1375,8 +1352,9 @@ function renderCart() {
 
                 return `<div data-cart-row="${idx}" tabindex="-1" class="relative py-3 px-2 border-b border-zinc-100 last:border-0 space-y-2 transition-colors duration-150 ${cartIdx === idx ? 'bg-zinc-50 ring-2 ring-zinc-900 rounded-xl' : ''}">
                     ${cartIdx === idx ? '<span class="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-r-full bg-zinc-900"></span>' : ''}
-                    <div class="flex items-start justify-between gap-2">
+                    <div class="flex items-center gap-2.5">
                         ${cartIdx === idx ? `<span class="shrink-0 mt-0.5 text-[10px] font-bold bg-zinc-900 text-white rounded-md px-1.5 py-0.5 tabular-nums">${idx + 1}/${state.cart.length}</span>` : ''}
+                        <div class="w-10 h-10 shrink-0 rounded-lg ${tileTint(i.nama_barang)} flex items-center justify-center text-xs font-black select-none">${inisial(i.nama_barang)}</div>
                         <p class="text-sm font-bold text-zinc-900 leading-snug truncate flex-1" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
                         <button data-del="${i.barang_id}" type="button" class="text-zinc-300 hover:text-red-600 font-bold px-1 transition-colors cursor-pointer text-base leading-none shrink-0" title="Hapus item">×</button>
                     </div>
@@ -1403,14 +1381,11 @@ function renderCart() {
                         </div>
                         <p class="text-xs font-bold text-zinc-900 tabular-nums text-right shrink-0 min-w-[70px]">${rupiah(subtotalItem(i))}</p>
                     </div>
-                    <div class="flex items-center justify-between gap-2 pt-0.5">
-                        <span class="text-[11px] text-zinc-500 tabular-nums font-medium">
-                            ${i.jumlah} ${selectedUnitObj.satuan} × ${rupiah(currentHarga)}
-                        </span>
-                        ${Number(i.diskon || 0) > 0
-                        ? `<span class="text-[11px] text-red-500 tabular-nums font-semibold">diskon −${persenPotongan(i.diskon, (i.harga_asli ?? i.harga) * i.jumlah)}%</span>`
-                        : `<span class="text-[11px] text-zinc-300 font-semibold">${rupiah(subtotalItem(i))}</span>`}
-                    </div>
+                    ${Number(i.diskon || 0) > 0
+                        ? `<div class="flex items-center justify-end">
+                            <span class="text-[11px] text-red-500 tabular-nums font-semibold">diskon −${persenPotongan(i.diskon, (i.harga_asli ?? i.harga) * i.jumlah)}%</span>
+                        </div>`
+                        : ''}
                 </div>`;
             })
             .join('');
@@ -1969,8 +1944,8 @@ async function init() {
     // filter kategori
     const wrapFilter = document.getElementById('filter-jenis');
     if (wrapFilter) {
-        const chipActive = 'chip-jenis px-4 py-1.5 rounded-lg text-sm font-bold bg-white text-zinc-900 shadow-xs transition cursor-pointer';
-        const chipIdle = 'chip-jenis px-4 py-1.5 rounded-lg text-sm font-semibold text-zinc-600 hover:text-zinc-900 transition cursor-pointer';
+        const chipActive = 'chip-jenis shrink-0 whitespace-nowrap px-4 h-8 rounded-full text-sm font-bold bg-zinc-900 text-white shadow-sm transition cursor-pointer';
+        const chipIdle = 'chip-jenis shrink-0 whitespace-nowrap px-4 h-8 rounded-full text-sm font-semibold text-zinc-600 hover:text-zinc-900 hover:bg-zinc-900/5 transition cursor-pointer';
         wrapFilter.innerHTML =
             `<button data-jenis="" class="${chipActive}" type="button">Semua</button>` +
             jenis
@@ -2444,6 +2419,7 @@ async function init() {
     const modalPanduan = document.getElementById('modal-panduan-shortcut');
 
     document.getElementById('btn-panduan-shortcut')?.addEventListener('click', bukaPanduanShortcut);
+    document.getElementById('btn-mobile-shortcut')?.addEventListener('click', bukaPanduanShortcut);
     document.getElementById('btn-tutup-panduan-shortcut')?.addEventListener('click', tutupPanduanShortcut);
     document.getElementById('btn-selesai-panduan-shortcut')?.addEventListener('click', tutupPanduanShortcut);
     modalPanduan?.addEventListener('click', (e) => {
@@ -2452,6 +2428,7 @@ async function init() {
 
     // Riwayat transaksi
     document.getElementById('btn-riwayat')?.addEventListener('click', bukaModalRiwayat);
+    document.getElementById('btn-mobile-riwayat')?.addEventListener('click', bukaModalRiwayat);
     document.getElementById('btn-tutup-riwayat')?.addEventListener('click', tutupModalRiwayat);
     document.getElementById('btn-tutup-riwayat-bawah')?.addEventListener('click', tutupModalRiwayat);
     document.getElementById('riwayat-tanggal')?.addEventListener('change', (e) => {
@@ -2780,7 +2757,6 @@ async function init() {
     // jam & tanggal berjalan di header
     updateJamHeader();
     setInterval(updateJamHeader, 1000);
-    muatRingkasanHari();
 
     // drawer keranjang (mobile)
     document.getElementById('btn-buka-cart')?.addEventListener('click', bukaCart);
@@ -2804,7 +2780,6 @@ async function init() {
     }
 
     setInterval(refreshStokSilent, AUTO_REFRESH_MS);
-    setInterval(muatRingkasanHari, AUTO_REFRESH_MS);
 }
 
 init().catch((e) => {

@@ -64,18 +64,24 @@
 <body class="bg-zinc-50 text-zinc-900 antialiased">
 
     {{-- LOADING SKELETON --}}
-    <div id="loading" class="fixed inset-0 flex flex-col h-dvh">
-        <div class="h-16 shrink-0 bg-white border-b border-zinc-200 px-6 flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-zinc-200 animate-pulse"></div>
-            <div class="space-y-1.5">
-                <div class="w-16 h-2.5 rounded bg-zinc-200 animate-pulse"></div>
-                <div class="w-12 h-2 rounded bg-zinc-100 animate-pulse"></div>
+    <div id="loading" class="fixed inset-0 flex h-dvh">
+        <div class="hidden lg:flex flex-col items-center gap-5 py-6 shrink-0 w-[92px] bg-white border-r border-zinc-200">
+            <div class="flex flex-col items-center gap-2">
+                <div class="w-9 h-9 rounded-lg bg-zinc-200 animate-pulse"></div>
+                <div class="w-10 h-2 rounded bg-zinc-100 animate-pulse"></div>
+            </div>
+            <div class="w-full px-2 space-y-2">
+                <div class="h-12 rounded-xl bg-zinc-200/50 animate-pulse"></div>
+                <div class="h-12 rounded-xl bg-zinc-200/50 animate-pulse"></div>
             </div>
         </div>
         <div class="flex-1 flex overflow-hidden">
             <div class="flex-1 px-8 pt-7">
                 <div class="max-w-5xl mx-auto space-y-5">
-                    <div class="h-12 rounded-xl bg-zinc-200/70 animate-pulse"></div>
+                    <div class="flex items-center gap-3">
+                        <div class="h-12 flex-1 rounded-xl bg-zinc-200/70 animate-pulse"></div>
+                        <div class="h-12 w-40 shrink-0 rounded-xl bg-zinc-200/50 animate-pulse"></div>
+                    </div>
                     <div class="h-9 w-72 rounded-xl bg-zinc-200/50 animate-pulse"></div>
                     <div class="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4">
                         <div class="h-32 rounded-2xl bg-zinc-200/60 animate-pulse"></div>
@@ -90,82 +96,54 @@
     </div>
 
     {{-- MAIN KASIR APP --}}
-    <div id="kasir-app" class="hidden h-dvh flex flex-col">
+    <div id="kasir-app" class="hidden h-dvh flex overflow-hidden">
 
-        {{-- HEADER --}}
-        <header class="anim-fade-up relative z-30 h-16 shrink-0 bg-white border-b border-zinc-200 px-4 lg:px-6 flex items-center gap-3 sm:gap-4 lg:gap-6" style="--i: 0">
-            <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
-                <div class="w-8 h-8 shrink-0 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-black text-sm select-none">K</div>
-                <div class="leading-tight hidden sm:block">
-                    <h1 class="text-sm font-bold tracking-tight">Kasir</h1>
-                    <p class="text-[11px] font-medium text-zinc-500">@if(isset($kasirData['karyawan'])) {{ $kasirData['karyawan']['nama'] }} • @endif {{ $kasirData['toko']['nama'] ?? 'Toko PKL' }}</p>
-                </div>
+        {{-- SIDEBAR KIRI (desktop) --}}
+        <aside class="hidden lg:flex flex-col items-center py-5 shrink-0 w-[92px] bg-white border-r border-zinc-200">
+            <div class="flex flex-col items-center gap-1.5 px-1">
+                <div class="w-9 h-9 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-black text-sm select-none">K</div>
+                <p class="text-[9px] font-bold text-zinc-500 text-center leading-tight truncate w-full select-none">{{ $kasirData['toko']['nama'] ?? 'Toko PKL' }}</p>
+                <span id="badge-mock" class="hidden text-[7px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                    Simulasi
+                </span>
             </div>
 
-            <span id="badge-mock"
-                class="hidden text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                Mode simulasi
-            </span>
-
-            <div class="flex-1"></div>
-
-            {{-- Jam & tanggal berjalan --}}
-            <div id="jam-header" class="hidden xl:flex flex-col items-end leading-tight mr-4">
-                <span id="jam-header-time" class="text-sm font-black tracking-tight tabular-nums"></span>
-                <span id="jam-header-date" class="text-[11px] font-medium text-zinc-500"></span>
-            </div>
-
-            {{-- Ringkasan omzet hari ini --}}
-            <div id="omzet-hari-ini" class="hidden xl:flex flex-col items-end leading-tight mr-4 pl-6 border-l border-zinc-200">
-                <span id="omzet-hari-ini-total" class="text-sm font-black tracking-tight tabular-nums">Rp 0</span>
-                <span id="omzet-hari-ini-label" class="text-[11px] font-medium text-zinc-500">Transaksi hari ini</span>
-            </div>
-
-            <div class="flex items-center gap-3">
-                <div id="dd-gudang" class="relative shrink-0">
-                    <button type="button" data-dd-btn aria-haspopup="listbox" aria-expanded="false"
-                        class="flex items-center gap-2 border border-zinc-200 rounded-xl bg-white pl-3 pr-2.5 lg:pl-4 lg:pr-3 py-2.5 max-w-[150px] lg:max-w-[220px] hover:border-zinc-400 transition-colors cursor-pointer">
-                        <span data-dd-value class="text-sm font-bold truncate"></span>
-                        <svg data-dd-chevron class="w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform duration-200"
-                            viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4 6l4 4 4-4"/>
-                        </svg>
-                    </button>
-                </div>
-
-                {{-- Tombol Panduan Shortcut --}}
+            <div class="flex flex-col items-center gap-1.5 mt-6">
                 <button id="btn-panduan-shortcut" type="button" title="Panduan shortcut (?)" aria-label="Panduan shortcut"
-                    class="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50 transition-all duration-200 cursor-pointer">
-                    <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    class="w-full flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                    <svg class="w-6 h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="2" y="6" width="20" height="12" rx="2"/>
                         <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/>
                     </svg>
+                    <span class="text-xs font-semibold leading-none">Panduan</span>
                 </button>
 
-                {{-- Tombol Riwayat Transaksi --}}
                 <button id="btn-riwayat" type="button" title="Riwayat transaksi" aria-label="Riwayat transaksi"
-                    class="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50 transition-all duration-200 cursor-pointer">
-                    <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    class="w-full flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                    <svg class="w-6 h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3 12a9 9 0 1 0 9 -9a9.75 9.75 0 0 0 -6.74 2.74l-2.26 -2"/>
                         <path d="M3 3v5h5"/>
                         <path d="M12 7v5l3 3"/>
                     </svg>
+                    <span class="text-xs font-semibold leading-none">Riwayat</span>
                 </button>
-
-                {{-- Tombol Logout --}}
-                <form method="POST" action="{{ route('kasir.logout') }}">
-                    @csrf
-                    <button type="submit" title="Logout" aria-label="Logout"
-                        class="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all duration-200 cursor-pointer">
-                        <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/>
-                            <path d="M9 12h12l-3 -3"/>
-                            <path d="M18 15l3 -3"/>
-                        </svg>
-                    </button>
-                </form>
             </div>
-        </header>
+
+            <div class="flex-1"></div>
+
+            <form method="POST" action="{{ route('kasir.logout') }}" class="w-full flex justify-center">
+                @csrf
+                <button type="submit" title="Logout" aria-label="Logout"
+                    class="w-[calc(100%-16px)] flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-zinc-500 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
+                    <svg class="w-6 h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/>
+                        <path d="M9 12h12l-3 -3"/>
+                        <path d="M18 15l3 -3"/>
+                    </svg>
+                    <span class="text-xs font-semibold leading-none">Logout</span>
+                </button>
+            </form>
+        </aside>
 
         <div class="flex-1 flex overflow-hidden">
 
@@ -175,23 +153,68 @@
             {{-- KIRI: DAFTAR PRODUK --}}
             <main class="flex-1 flex flex-col min-w-0 px-4 lg:px-8 pt-7 overflow-hidden">
                 <div class="anim-fade-up max-w-5xl w-full mx-auto flex flex-col flex-1 overflow-hidden" style="--i: 1">
-                    <div class="relative">
-                        <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-zinc-400 pointer-events-none"
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/>
-                        </svg>
-                        <input id="input-search" type="text" placeholder="Cari nama, kode, atau scan barcode"
-                            class="w-full h-12 border border-zinc-200 rounded-xl pl-11 pr-10 text-sm font-medium bg-white placeholder:text-zinc-500 placeholder:font-normal shadow-xs shadow-zinc-100 focus:outline-none focus:border-zinc-900 transition-colors">
-                        <button id="btn-clear-search" type="button" aria-label="Bersihkan pencarian" title="Bersihkan pencarian" class="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 text-zinc-500 hover:text-zinc-900 hidden flex items-center justify-center transition-colors">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                        </button>
+
+                    {{-- TOOLBAR: toolbar mobile (aksi) + gudang + omzet --}}
+                    <div class="flex items-center gap-3">
+                        {{-- Tombol aksi mobile-only (muncul di atas area konten karena sidebar tersembunyi) --}}
+                        <div class="lg:hidden flex items-center gap-2 shrink-0">
+                            <button id="btn-mobile-shortcut" type="button" title="Panduan shortcut (?)" aria-label="Panduan shortcut"
+                                class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50 transition-all duration-200 cursor-pointer">
+                                <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="6" width="20" height="12" rx="2"/>
+                                    <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/>
+                                </svg>
+                            </button>
+                            <button id="btn-mobile-riwayat" type="button" title="Riwayat transaksi" aria-label="Riwayat transaksi"
+                                class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50 transition-all duration-200 cursor-pointer">
+                                <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 12a9 9 0 1 0 9 -9a9.75 9.75 0 0 0 -6.74 2.74l-2.26 -2"/>
+                                    <path d="M3 3v5h5"/>
+                                    <path d="M12 7v5l3 3"/>
+                                </svg>
+                            </button>
+                            <form method="POST" action="{{ route('kasir.logout') }}">
+                                @csrf
+                                <button type="submit" title="Logout" aria-label="Logout"
+                                    class="w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all duration-200 cursor-pointer">
+                                    <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"/>
+                                        <path d="M9 12h12l-3 -3"/>
+                                        <path d="M18 15l3 -3"/>
+                                    </svg>
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="flex-1"></div>
                     </div>
 
-                    <div id="filter-jenis" class="inline-flex flex-wrap w-fit gap-1 bg-zinc-200/60 rounded-xl p-1 mt-4 mb-4"></div>
-                    <div id="label-gudang-aktif" class="hidden mb-6 text-[11px] font-semibold text-zinc-500 flex items-center gap-1.5">
-                        <span class="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
-                        Stok dari: <span class="font-bold text-zinc-600" id="label-gudang-aktif-nama"></span>
+                    <div class="flex items-center gap-3 mt-2">
+                        <div class="relative flex-1 min-w-0">
+                            <svg class="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-zinc-400 pointer-events-none"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0"/><path d="M21 21l-6 -6"/>
+                            </svg>
+                            <input id="input-search" type="text" placeholder="Cari nama, kode, atau scan barcode"
+                                class="w-full h-12 border border-zinc-200 rounded-xl pl-11 pr-10 text-sm font-medium bg-white placeholder:text-zinc-500 placeholder:font-normal shadow-xs shadow-zinc-100 focus:outline-none focus:border-zinc-900 transition-colors">
+                            <button id="btn-clear-search" type="button" aria-label="Bersihkan pencarian" title="Bersihkan pencarian" class="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 text-zinc-500 hover:text-zinc-900 hidden flex items-center justify-center transition-colors">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+
+                        <div id="dd-gudang" class="relative shrink-0">
+                            <button type="button" data-dd-btn aria-haspopup="listbox" aria-expanded="false"
+                                class="flex items-center gap-2 border border-zinc-200 rounded-xl bg-white pl-3 pr-2.5 lg:pl-4 lg:pr-3 py-2.5 h-12 max-w-[150px] lg:max-w-[220px] hover:border-zinc-400 transition-colors cursor-pointer">
+                                <span data-dd-value class="text-sm font-bold truncate"></span>
+                                <svg data-dd-chevron class="w-3.5 h-3.5 text-zinc-400 shrink-0 transition-transform duration-200"
+                                    viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4 6l4 4 4-4"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
+
+                    <div id="filter-jenis" class="inline-flex w-fit max-w-full overflow-x-auto gap-1 bg-zinc-200/60 rounded-xl p-1 mt-4 mb-4"></div>
 
                     <div id="grid-produk"
                         class="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4 content-start pt-3 pb-8 px-2"></div>
