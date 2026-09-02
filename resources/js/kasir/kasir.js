@@ -1123,7 +1123,7 @@ function renderProduk() {
 
             const hasTier = (b.min_qty_2 && Number(b.nilai_tier_2) > 0) || (b.min_qty_3 && Number(b.nilai_tier_3) > 0) || (b.min_qty_1 && Number(b.nilai_tier_1) > 0);
             const tierBadgeProdukHtml = hasTier
-                ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-1.5 py-0.5 rounded-md mt-1">🏷️ Promo Qty</span>`
+                ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-1.5 py-0.5 rounded-md mt-1"><svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1 -2.83 0l-9.17 -9.17a2 2 0 0 1 -0.59 -1.42v-5.99a2 2 0 0 1 2 -2h5.99a2 2 0 0 1 1.42 0.59l9.17 9.17a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Promo Qty</span>`
                 : '';
 
             return `<button data-add="${b.id}" style="--i: ${Math.min(idx, 16)}"
@@ -1139,14 +1139,19 @@ function renderProduk() {
                     <div class="w-10 h-10 rounded-xl ${tileTint(b.nama_barang)} flex items-center justify-center text-xs font-black select-none">
                         ${inisial(b.nama_barang)}
                     </div>
-                    <span class="text-[11px] font-semibold whitespace-nowrap px-2 py-0.5 rounded-full
+                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap px-2 py-0.5 rounded-full
                         ${habis ? 'bg-red-50 text-red-500' : menipis ? 'bg-amber-50 text-amber-600' : 'bg-zinc-50 text-zinc-500'}">
-                        ${habis ? 'Habis' : `${stok} ${b.satuan ?? ''}`}
+                        ${habis
+                            ? `<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86l-8.29 14.29a2 2 0 0 0 1.71 3h16.58a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0 -3.42 0z"/></svg><span>Habis</span>`
+                            : menipis
+                                ? `<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0 -18a9 9 0 0 0 0 18z"/><path d="M12 7v5l3 3"/></svg><span>${stok} ${b.satuan ?? ''}</span>`
+                                : `<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7l-8-4l-8 4v10l8 4l8-4z"/><path d="M12 7v5l3 2"/></svg><span>${stok} ${b.satuan ?? ''}</span>`}
                     </span>
                 </div>
                 <div>
                     <p class="font-bold text-sm leading-snug line-clamp-2">${highlightMatch(b.nama_barang, state.search)}</p>
                     <p class="font-black tracking-tight tabular-nums mt-1.5">${rupiah(b.harga_jual)} <span class="text-xs font-normal text-zinc-500">/ ${defaultUnit}</span></p>
+                    ${tierBadgeProdukHtml}
                 </div>
             </button>`;
         })
@@ -1505,10 +1510,31 @@ function renderCart() {
     renderPaymentMethodPills();
 }
 
+function renderGudangStokInfo() {
+    const elProduk = document.getElementById('gudang-stok-produk');
+    const elTotal = document.getElementById('gudang-stok-total');
+    if (!elProduk && !elTotal) return;
+    if (!state.gudangId) {
+        if (elProduk) elProduk.textContent = '';
+        if (elTotal) elTotal.textContent = '';
+        return;
+    }
+    let produkTersedia = 0;
+    let totalStok = 0;
+    for (const b of state.barang) {
+        const stok = Number(b.stok?.[state.gudangId] ?? 0);
+        if (stok > 0) produkTersedia += 1;
+        totalStok += stok;
+    }
+    if (elProduk) elProduk.textContent = `${produkTersedia} produk tersedia`;
+    if (elTotal) elTotal.textContent = `${totalStok.toLocaleString('id-ID')} stok`;
+}
+
 function render() {
     updateCartTierPrices();
     renderProduk();
     renderCart();
+    renderGudangStokInfo();
 }
 
 function fokusCartRow() {

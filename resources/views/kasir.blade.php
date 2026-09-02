@@ -99,7 +99,7 @@
         <aside class="hidden lg:flex flex-col items-center py-5 shrink-0 w-[92px] bg-white border-r border-zinc-200">
             <div class="flex flex-col items-center gap-1.5 px-1">
                 <div class="w-9 h-9 rounded-lg bg-zinc-900 text-white flex items-center justify-center font-black text-sm select-none">K</div>
-                <p class="text-[9px] font-semibold text-zinc-400 text-center leading-tight truncate w-full select-none" title="{{ $kasirData['karyawan']['nama'] ?? 'Kasir' }}">{{ $kasirData['karyawan']['nama'] ?? 'Kasir' }}</p>
+                <p class="text-[11px] font-bold text-zinc-700 text-center leading-tight truncate w-full select-none" title="{{ $kasirData['toko']['nama'] ?? 'Toko' }}">{{ $kasirData['toko']['nama'] ?? 'Toko' }}</p>
                 <span id="badge-mock" class="hidden text-[7px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
                     Simulasi
                 </span>
@@ -209,6 +209,11 @@
                                 </svg>
                             </button>
                         </div>
+
+                        <div id="gudang-stok-info" class="hidden lg:flex shrink-0 flex-col justify-center text-[11px] leading-tight pr-1">
+                            <span id="gudang-stok-produk" class="font-bold text-zinc-500"></span>
+                            <span id="gudang-stok-total" class="text-zinc-400 tabular-nums"></span>
+                        </div>
                     </div>
 
                     <div id="filter-jenis" class="inline-flex w-fit max-w-full overflow-x-auto gap-1 bg-zinc-200/60 rounded-xl p-1 mt-4 mb-4"></div>
@@ -268,8 +273,9 @@
                     <div class="pt-2 border-t border-zinc-200/80 space-y-2.5">
                         <div class="flex items-center justify-between">
                             <h3 class="text-sm font-bold text-zinc-900 tracking-tight">Pembayaran</h3>
-                            <button id="btn-toggle-payment" type="button" class="hidden" aria-hidden="true">
-                                <svg id="icon-toggle-payment" class="w-4 h-4 hidden" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>
+                            <button id="btn-toggle-payment" type="button" title="Rincian pembayaran" aria-label="Rincian pembayaran"
+                                class="w-6 h-6 flex items-center justify-center rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                                <svg id="icon-toggle-payment" class="w-4 h-4 transition-transform duration-200" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>
                             </button>
                         </div>
 
