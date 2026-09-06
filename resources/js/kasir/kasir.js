@@ -130,6 +130,11 @@ function tambahKeCart(barangId) {
     const barang = state.barang.find((b) => b.id === barangId);
     if (!barang) return;
 
+    if (barang.status === 'habis') {
+        toast(`Menu ${barang.nama_barang} sedang tidak tersedia (habis)`, true);
+        return;
+    }
+
     const units = getUnitsForBarang(barang);
     const existing = state.cart.find((i) => i.barang_id === barangId);
     const satuanDefault = existing ? existing.satuan : units[0].satuan;
@@ -1111,7 +1116,8 @@ function renderProduk() {
     grid.innerHTML = list
         .map((b, idx) => {
             const stok = stokTersedia(b);
-            const habis = stok <= 0;
+            const isHabisStatus = b.status === 'habis';
+            const habis = isHabisStatus || stok <= 0;
             const menipis = !habis && stok <= 5;
             const sorot = highlightedIdx === idx ? 'ring-2 ring-zinc-900 shadow-lg shadow-zinc-900/15' : '';
             const sorotCart = cartSelId === b.id;
@@ -1126,7 +1132,13 @@ function renderProduk() {
                 ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-1.5 py-0.5 rounded-md mt-1"><svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1 -2.83 0l-9.17 -9.17a2 2 0 0 1 -0.59 -1.42v-5.99a2 2 0 0 1 2 -2h5.99a2 2 0 0 1 1.42 0.59l9.17 9.17a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Promo Qty</span>`
                 : '';
 
-            return `<button data-add="${b.id}" style="--i: ${Math.min(idx, 16)}"
+            const fotoHtml = b.gambar
+                ? `<img src="${b.gambar}" alt="${b.nama_barang}" class="w-10 h-10 rounded-xl object-cover border border-zinc-200 shrink-0" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-10 h-10 rounded-xl ${tileTint(b.nama_barang)} flex items-center justify-center text-xs font-black select-none shrink-0\\'>${inisial(b.nama_barang)}</div>';" />`
+                : `<div class="w-10 h-10 rounded-xl ${tileTint(b.nama_barang)} flex items-center justify-center text-xs font-black select-none shrink-0">
+                    ${inisial(b.nama_barang)}
+                </div>`;
+
+            return `<button data-add="${b.id}" ${habis ? 'disabled' : ''} style="--i: ${Math.min(idx, 16)}"
                 class="${animate ? 'anim-fade-up ' : ''}relative group text-left bg-white rounded-2xl border p-4 flex flex-col gap-3 transition duration-200
                        ${diKeranjang ? 'border-zinc-900 ring-1 ring-zinc-900 bg-zinc-50' : 'border-zinc-200'}
                        ${habis
@@ -1136,9 +1148,7 @@ function renderProduk() {
                 ${diKeranjang ? `<span class="absolute -top-2 -left-2 z-10 px-2 py-0.5 rounded-lg bg-zinc-900 text-white text-[10px] font-bold shadow-sm">Di keranjang</span>` : ''}
                 ${jumlahDiKeranjang > 0 ? `<span class="absolute bottom-3 right-3 min-w-6 h-6 px-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold flex items-center justify-center tabular-nums shadow-sm">×${jumlahDiKeranjang}</span>` : ''}
                 <div class="flex items-start justify-between gap-2">
-                    <div class="w-10 h-10 rounded-xl ${tileTint(b.nama_barang)} flex items-center justify-center text-xs font-black select-none">
-                        ${inisial(b.nama_barang)}
-                    </div>
+                    ${fotoHtml}
                     <span class="inline-flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap px-2 py-0.5 rounded-full
                         ${habis ? 'bg-red-50 text-red-500' : menipis ? 'bg-amber-50 text-amber-600' : 'bg-zinc-50 text-zinc-500'}">
                         ${habis

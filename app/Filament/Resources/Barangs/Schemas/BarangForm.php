@@ -3,8 +3,11 @@
 namespace App\Filament\Resources\Barangs\Schemas;
 
 use App\Models\JenisBarang;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Forms\Set;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -66,6 +69,70 @@ class BarangForm
                                 ->required()
                                 ->prefix('Rp')
                                 ->default(0),
+                        ]),
+                    ]),
+
+                Section::make('Pengaturan Cafe & POS')
+                    ->description('Klasifikasi fungsi produk di cafe, ketersediaan menu, dan integrasi layar kasir')
+                    ->columnSpanFull()
+                    ->schema([
+                        Grid::make(2)->schema([
+                            FileUpload::make('gambar')
+                                ->label('Foto Produk')
+                                ->image()
+                                ->directory('barang')
+                                ->disk('public')
+                                ->maxSize(2048)
+                                ->imageResizeMode('cover')
+                                ->imageCropAspectRatio('1:1')
+                                ->helperText('Format JPG, PNG, atau WebP (Maksimal 2MB). Ditampilkan pada katalog kasir.')
+                                ->columnSpan(1),
+
+                            Grid::make(1)->schema([
+                                Select::make('tipe_barang')
+                                    ->label('Tipe Barang / Fungsi Cafe')
+                                    ->placeholder('Pilih tipe fungsi barang...')
+                                    ->options([
+                                        'bahan_baku' => 'Bahan Baku (Kopi biji, susu, beras, dll)',
+                                        'setengah_jadi' => 'Setengah Jadi (Konsentrat espresso, saus marinasi, dll)',
+                                        'barang_jadi' => 'Barang Jadi / Menu Olahan (Latte, nasi goreng, dll)',
+                                        'barang_dagang' => 'Barang Dagang (Air mineral botol, snack kemasan, dll)',
+                                        'barang_pembantu' => 'Barang Pembantu (Cup plastik, sedotan, paper bag, dll)',
+                                    ])
+                                    ->required()
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, Set $set) {
+                                        if (in_array($state, ['bahan_baku', 'setengah_jadi', 'barang_pembantu'])) {
+                                            $set('bisa_dijual', false);
+                                            $set('butuh_proses', false);
+                                        } elseif ($state === 'barang_jadi') {
+                                            $set('bisa_dijual', true);
+                                            $set('butuh_proses', true);
+                                        } elseif ($state === 'barang_dagang') {
+                                            $set('bisa_dijual', true);
+                                            $set('butuh_proses', false);
+                                        }
+                                    }),
+
+                                Grid::make(3)->schema([
+                                    Toggle::make('bisa_dijual')
+                                        ->label('Dapat Dijual')
+                                        ->helperText('Muncul di kasir')
+                                        ->default(true),
+
+                                    Toggle::make('butuh_proses')
+                                        ->label('Butuh Proses')
+                                        ->helperText('Tiket barista/dapur')
+                                        ->default(false),
+
+                                    Toggle::make('status')
+                                        ->label('Ketersediaan')
+                                        ->helperText('Menu tersedia')
+                                        ->formatStateUsing(fn ($state) => $state === 'tersedia' || $state === null || $state === true || $state === 1)
+                                        ->dehydrateStateUsing(fn ($state) => $state ? 'tersedia' : 'habis')
+                                        ->default(true),
+                                ]),
+                            ])->columnSpan(1),
                         ]),
                     ]),
 

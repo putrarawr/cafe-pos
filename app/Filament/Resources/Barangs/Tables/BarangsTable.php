@@ -4,7 +4,10 @@ namespace App\Filament\Resources\Barangs\Tables;
 
 use App\Models\Barang;
 use Filament\Tables\Table;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Columns\ToggleColumn;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
@@ -19,10 +22,36 @@ class BarangsTable
     {
         return $table
             ->columns([
+                ImageColumn::make('gambar')
+                    ->label('Foto')
+                    ->disk('public')
+                    ->circular()
+                    ->size(36)
+                    ->toggleable(),
                 TextColumn::make('jenisBarang.nama_jenis')
                     ->label('Jenis Barang')
                     ->sortable()
                     ->searchable(),
+                TextColumn::make('tipe_barang')
+                    ->label('Tipe')
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'bahan_baku' => 'Bahan Baku',
+                        'setengah_jadi' => 'Setengah Jadi',
+                        'barang_jadi' => 'Barang Jadi',
+                        'barang_dagang' => 'Barang Dagang',
+                        'barang_pembantu' => 'Barang Pembantu',
+                        default => ucwords(str_replace('_', ' ', $state ?? '-')),
+                    })
+                    ->badge()
+                    ->color(fn ($state) => match ($state) {
+                        'barang_jadi' => 'success',
+                        'barang_dagang' => 'info',
+                        'setengah_jadi' => 'warning',
+                        'bahan_baku' => 'gray',
+                        'barang_pembantu' => 'gray',
+                        default => 'gray',
+                    })
+                    ->sortable(),
                 TextColumn::make('nomer_seri')
                     ->label('Nomor Seri')
                     ->searchable()
@@ -38,6 +67,20 @@ class BarangsTable
                     ->label('Barcode')
                     ->searchable()
                     ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                ToggleColumn::make('status')
+                    ->label('Tersedia')
+                    ->getStateUsing(fn ($record) => $record->status === 'tersedia')
+                    ->beforeStateUpdated(function ($record, $state) {
+                        $record->status = $state ? 'tersedia' : 'habis';
+                    }),
+                IconColumn::make('bisa_dijual')
+                    ->label('Dijual')
+                    ->boolean()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                IconColumn::make('butuh_proses')
+                    ->label('Proses')
+                    ->boolean()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('harga_beli')
                     ->label('Beli Terakhir')
@@ -93,6 +136,21 @@ class BarangsTable
                     ->sortable(),
             ])
             ->filters([
+                SelectFilter::make('tipe_barang')
+                    ->label('Tipe Barang')
+                    ->options([
+                        'bahan_baku' => 'Bahan Baku',
+                        'setengah_jadi' => 'Setengah Jadi',
+                        'barang_jadi' => 'Barang Jadi',
+                        'barang_dagang' => 'Barang Dagang',
+                        'barang_pembantu' => 'Barang Pembantu',
+                    ]),
+                SelectFilter::make('status')
+                    ->label('Ketersediaan')
+                    ->options([
+                        'tersedia' => 'Tersedia',
+                        'habis' => 'Habis',
+                    ]),
                 SelectFilter::make('jenis_barang_id')
                     ->label('Jenis Barang')
                     ->options(fn () => \App\Models\JenisBarang::orderBy('nama_jenis')->get()->mapWithKeys(fn ($j) => [

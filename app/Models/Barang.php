@@ -15,12 +15,57 @@ class Barang extends Model
 
     protected $guarded = ['id'];
 
+    protected $attributes = [
+        'tipe_barang' => 'barang_dagang',
+        'status' => 'tersedia',
+        'bisa_dijual' => true,
+        'butuh_proses' => false,
+    ];
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['jenis_barang_id', 'nomer_seri', 'barcode', 'nama_barang', 'harga_jual', 'satuan'])
+            ->logOnly([
+                'jenis_barang_id',
+                'nomer_seri',
+                'barcode',
+                'nama_barang',
+                'gambar',
+                'tipe_barang',
+                'status',
+                'butuh_proses',
+                'bisa_dijual',
+                'harga_jual',
+                'satuan',
+            ])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'butuh_proses' => 'boolean',
+            'bisa_dijual' => 'boolean',
+        ];
+    }
+
+    public function getGambarUrlAttribute(): ?string
+    {
+        if (empty($this->gambar)) {
+            return null;
+        }
+
+        if (str_starts_with($this->gambar, 'http://') || str_starts_with($this->gambar, 'https://')) {
+            return $this->gambar;
+        }
+
+        return asset('storage/' . $this->gambar);
+    }
+
+    public function scopeBisaDijual($query)
+    {
+        return $query->where('bisa_dijual', true);
     }
 
     protected static function booted(): void

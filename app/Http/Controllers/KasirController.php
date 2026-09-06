@@ -100,10 +100,14 @@ class KasirController extends Controller
         return view('kasir', [
             'kasirData' => [
                 'karyawan' => $karyawanInfo,
-                'barang' => Barang::with('gudangs')->get()->map(fn (Barang $b) => [
+                'barang' => Barang::bisaDijual()->with('gudangs')->get()->map(fn (Barang $b) => [
                     'id' => $b->id,
                     'jenis_barang_id' => $b->jenis_barang_id,
                     'nama_barang' => $b->nama_barang,
+                    'gambar' => $b->gambar_url,
+                    'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
+                    'status' => $b->status ?? 'tersedia',
+                    'butuh_proses' => (bool) $b->butuh_proses,
                     'nomer_seri' => $b->nomer_seri,
                     'barcode' => $b->barcode,
                     'harga_jual' => (int) $b->harga_jual,
@@ -148,10 +152,14 @@ class KasirController extends Controller
     public function data()
     {
         return response()->json([
-            'barang' => Barang::with('gudangs')->get()->map(fn (Barang $b) => [
+            'barang' => Barang::bisaDijual()->with('gudangs')->get()->map(fn (Barang $b) => [
                 'id' => $b->id,
                 'jenis_barang_id' => $b->jenis_barang_id,
                 'nama_barang' => $b->nama_barang,
+                'gambar' => $b->gambar_url,
+                'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
+                'status' => $b->status ?? 'tersedia',
+                'butuh_proses' => (bool) $b->butuh_proses,
                 'nomer_seri' => $b->nomer_seri,
                 'barcode' => $b->barcode,
                 'harga_jual' => (int) $b->harga_jual,
@@ -336,6 +344,28 @@ class KasirController extends Controller
         // ===== Bulk-fetch semua Barang yang dibutuhkan dalam 1 query =====
         $allBarangIds = array_unique(array_column($data['details'], 'barang_id'));
         $barangs = Barang::whereIn('id', $allBarangIds)->get()->keyBy('id');
+
+        foreach ($data['details'] as $d) {
+            $item = $barangs->get($d['barang_id']);
+            if (!$item) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Barang tidak ditemukan.',
+                ], 422);
+            }
+            if ($item->status === 'habis') {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Menu '{$item->nama_barang}' sedang berstatus habis.",
+                ], 422);
+            }
+            if (!$item->bisa_dijual) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Barang '{$item->nama_barang}' tidak dapat dijual di kasir.",
+                ], 422);
+            }
+        }
 
         // ===== Verifikasi bonus BELANJA dari aturan PromoBonus (jangan percaya browser) =====
         $bonusPool = [];
