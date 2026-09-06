@@ -53,6 +53,7 @@ class RekapanKasir extends Page implements HasForms, HasTable
             'dari_tanggal' => now()->format('Y-m-d'),
             'sampai_tanggal' => now()->format('Y-m-d'),
             'kasir' => null,
+            'kategori_pembayaran' => null,
         ]);
     }
 
@@ -70,7 +71,7 @@ class RekapanKasir extends Page implements HasForms, HasTable
                         Grid::make([
                             'default' => 1,
                             'sm' => 2,
-                            'lg' => 3,
+                            'lg' => 4,
                         ])->schema([
                             DatePicker::make('dari_tanggal')
                                 ->label('Dari Tanggal')
@@ -103,6 +104,17 @@ class RekapanKasir extends Page implements HasForms, HasTable
                                 ->preload()
                                 ->live()
                                 ->afterStateUpdated(fn () => $this->resetTable()),
+
+                            Select::make('kategori_pembayaran')
+                                ->label('Kategori Pembayaran')
+                                ->placeholder('Semua Kategori')
+                                ->options([
+                                    'tunai' => 'Tunai',
+                                    'qris' => 'QRIS',
+                                    'transfer' => 'Bank / Transfer',
+                                ])
+                                ->live()
+                                ->afterStateUpdated(fn () => $this->resetTable()),
                         ]),
                     ]),
             ])
@@ -114,6 +126,7 @@ class RekapanKasir extends Page implements HasForms, HasTable
         $dariTanggal = $this->data['dari_tanggal'] ?? now()->format('Y-m-d');
         $sampaiTanggal = $this->data['sampai_tanggal'] ?? now()->format('Y-m-d');
         $kasirFilter = $this->data['kasir'] ?? null;
+        $kategoriFilter = $this->data['kategori_pembayaran'] ?? null;
 
         $query = Penjualan::query()
             ->whereDate('tanggal', '>=', $dariTanggal)
@@ -126,6 +139,16 @@ class RekapanKasir extends Page implements HasForms, HasTable
             } elseif (str_starts_with($kasirFilter, 'user_')) {
                 $uId = (int) substr($kasirFilter, 5);
                 $query->where('user_id', $uId);
+            }
+        }
+
+        if (!empty($kategoriFilter)) {
+            if ($kategoriFilter === 'tunai') {
+                $query->whereRaw("LOWER(jenis_pembayaran) = 'tunai'");
+            } elseif ($kategoriFilter === 'qris') {
+                $query->whereRaw("LOWER(jenis_pembayaran) = 'qris'");
+            } elseif ($kategoriFilter === 'transfer') {
+                $query->whereRaw("LOWER(jenis_pembayaran) IN ('transfer', 'bank', 'debit')");
             }
         }
 
@@ -149,6 +172,7 @@ class RekapanKasir extends Page implements HasForms, HasTable
             'sum_qris' => (float) ($stat->sum_qris ?? 0),
             'sum_transfer' => (float) ($stat->sum_transfer ?? 0),
             'sum_omset' => (float) ($stat->sum_omset ?? 0),
+            'active_kategori' => $kategoriFilter,
         ];
     }
 
@@ -157,14 +181,27 @@ class RekapanKasir extends Page implements HasForms, HasTable
         $dariTanggal = $this->data['dari_tanggal'] ?? now()->format('Y-m-d');
         $sampaiTanggal = $this->data['sampai_tanggal'] ?? now()->format('Y-m-d');
         $kasirFilter = $this->data['kasir'] ?? null;
+        $kategoriFilter = $this->data['kategori_pembayaran'] ?? null;
 
         return $table
-            ->query(function () use ($dariTanggal, $sampaiTanggal, $kasirFilter): Builder {
+            ->query(function () use ($dariTanggal, $sampaiTanggal, $kasirFilter, $kategoriFilter): Builder {
                 $subQuery = Penjualan::query()
                     ->select('penjualan.karyawan_id', 'penjualan.user_id')
                     ->selectRaw('MIN(penjualan.id) as id')
-                    ->selectRaw('COUNT(*) as total_transaksi')
-                    ->selectRaw('COALESCE((
+                    ->selectRaw('COUNT(*) as total_transaksi');
+
+                $itemKategoriSql = '';
+                if (!empty($kategoriFilter)) {
+                    if ($kategoriFilter === 'tunai') {
+                        $itemKategoriSql = " AND LOWER(p2.jenis_pembayaran) = 'tunai'";
+                    } elseif ($kategoriFilter === 'qris') {
+                        $itemKategoriSql = " AND LOWER(p2.jenis_pembayaran) = 'qris'";
+                    } elseif ($kategoriFilter === 'transfer') {
+                        $itemKategoriSql = " AND LOWER(p2.jenis_pembayaran) IN ('transfer', 'bank', 'debit')";
+                    }
+                }
+
+                $subQuery->selectRaw("COALESCE((
                         SELECT SUM(dj.jumlah)
                         FROM detail_jual dj
                         JOIN penjualan p2 ON p2.id = dj.penjualan_id
@@ -172,15 +209,14 @@ class RekapanKasir extends Page implements HasForms, HasTable
                             (penjualan.karyawan_id IS NOT NULL AND p2.karyawan_id = penjualan.karyawan_id)
                             OR (penjualan.karyawan_id IS NULL AND p2.karyawan_id IS NULL AND p2.user_id = penjualan.user_id)
                         )
-                        AND p2.tanggal >= ? AND p2.tanggal <= ?
-                    ), 0) as total_qty_item', [$dariTanggal, $sampaiTanggal])
+                        AND p2.tanggal >= ? AND p2.tanggal <= ?{$itemKategoriSql}
+                    ), 0) as total_qty_item", [$dariTanggal, $sampaiTanggal])
                     ->selectRaw("SUM(CASE WHEN LOWER(penjualan.jenis_pembayaran) = 'tunai' THEN penjualan.neto ELSE 0 END) as total_tunai")
                     ->selectRaw("SUM(CASE WHEN LOWER(penjualan.jenis_pembayaran) = 'qris' THEN penjualan.neto ELSE 0 END) as total_qris")
                     ->selectRaw("SUM(CASE WHEN LOWER(penjualan.jenis_pembayaran) IN ('transfer', 'bank', 'debit') THEN penjualan.neto ELSE 0 END) as total_transfer")
                     ->selectRaw('SUM(penjualan.neto) as total_omset')
                     ->whereDate('penjualan.tanggal', '>=', $dariTanggal)
-                    ->whereDate('penjualan.tanggal', '<=', $sampaiTanggal)
-                    ->groupBy('penjualan.karyawan_id', 'penjualan.user_id');
+                    ->whereDate('penjualan.tanggal', '<=', $sampaiTanggal);
 
                 if (!empty($kasirFilter)) {
                     if (str_starts_with($kasirFilter, 'karyawan_')) {
@@ -191,6 +227,18 @@ class RekapanKasir extends Page implements HasForms, HasTable
                         $subQuery->where('penjualan.user_id', $uId);
                     }
                 }
+
+                if (!empty($kategoriFilter)) {
+                    if ($kategoriFilter === 'tunai') {
+                        $subQuery->whereRaw("LOWER(penjualan.jenis_pembayaran) = 'tunai'");
+                    } elseif ($kategoriFilter === 'qris') {
+                        $subQuery->whereRaw("LOWER(penjualan.jenis_pembayaran) = 'qris'");
+                    } elseif ($kategoriFilter === 'transfer') {
+                        $subQuery->whereRaw("LOWER(penjualan.jenis_pembayaran) IN ('transfer', 'bank', 'debit')");
+                    }
+                }
+
+                $subQuery->groupBy('penjualan.karyawan_id', 'penjualan.user_id');
 
                 return Penjualan::query()
                     ->fromSub($subQuery, 'penjualan')
@@ -245,7 +293,7 @@ class RekapanKasir extends Page implements HasForms, HasTable
                     ->extraAttributes(['class' => 'hidden', 'style' => 'display:none'])
                     ->modalHeading(fn (Penjualan $record) => "Rincian Faktur Penjualan - {$record->nama_kasir}")
                     ->modalWidth('7xl')
-                    ->modalContent(function (Penjualan $record) use ($dariTanggal, $sampaiTanggal): View {
+                    ->modalContent(function (Penjualan $record) use ($dariTanggal, $sampaiTanggal, $kategoriFilter): View {
                         $invoicesQuery = Penjualan::query()
                             ->whereDate('tanggal', '>=', $dariTanggal)
                             ->whereDate('tanggal', '<=', $sampaiTanggal)
@@ -258,12 +306,23 @@ class RekapanKasir extends Page implements HasForms, HasTable
                             $invoicesQuery->whereNull('karyawan_id')->where('user_id', $record->user_id);
                         }
 
+                        if (!empty($kategoriFilter)) {
+                            if ($kategoriFilter === 'tunai') {
+                                $invoicesQuery->whereRaw("LOWER(jenis_pembayaran) = 'tunai'");
+                            } elseif ($kategoriFilter === 'qris') {
+                                $invoicesQuery->whereRaw("LOWER(jenis_pembayaran) = 'qris'");
+                            } elseif ($kategoriFilter === 'transfer') {
+                                $invoicesQuery->whereRaw("LOWER(jenis_pembayaran) IN ('transfer', 'bank', 'debit')");
+                            }
+                        }
+
                         $invoices = $invoicesQuery->get();
 
                         return view('filament.pages.modal-detail-rekapan-kasir', [
                             'kasirName' => $record->nama_kasir,
                             'dariTanggal' => $dariTanggal,
                             'sampaiTanggal' => $sampaiTanggal,
+                            'activeKategori' => $kategoriFilter,
                             'invoices' => $invoices,
                         ]);
                     })

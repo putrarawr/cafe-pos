@@ -65,10 +65,18 @@
     </style>
 
     <div style="display: flex; flex-direction: column; gap: 28px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        @php
+            $activeKat = $stats['active_kategori'] ?? null;
+            $isTunaiDimmed = ($activeKat !== null && $activeKat !== 'tunai');
+            $isQrisDimmed = ($activeKat !== null && $activeKat !== 'qris');
+            $isTransferDimmed = ($activeKat !== null && $activeKat !== 'transfer');
+            $dimStyle = 'opacity: 0.38; filter: grayscale(0.6); transition: all 0.2s ease-in-out;';
+        @endphp
+
         {{-- 4 Kartu Ringkasan Metrik Setoran Toko (Gaya Bersih & Konsisten) --}}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px;">
             {{-- Tunai --}}
-            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); {{ $isTunaiDimmed ? $dimStyle : '' }}">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Tunai</span>
                     <span style="background: #27272a; color: #d4d4d8; border: 1px solid #3f3f46; padding: 3px 10px; border-radius: 4px; font-size: 10px; font-weight: 700;">
@@ -81,7 +89,7 @@
             </div>
 
             {{-- QRIS --}}
-            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); {{ $isQrisDimmed ? $dimStyle : '' }}">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">QRIS</span>
                     <span style="background: #27272a; color: #d4d4d8; border: 1px solid #3f3f46; padding: 3px 10px; border-radius: 4px; font-size: 10px; font-weight: 700;">
@@ -94,7 +102,7 @@
             </div>
 
             {{-- Bank / Transfer --}}
-            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); {{ $isTransferDimmed ? $dimStyle : '' }}">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Bank / Transfer</span>
                     <span style="background: #27272a; color: #d4d4d8; border: 1px solid #3f3f46; padding: 3px 10px; border-radius: 4px; font-size: 10px; font-weight: 700;">

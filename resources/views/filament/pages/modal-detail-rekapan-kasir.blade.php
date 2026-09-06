@@ -5,6 +5,11 @@
     $totalQris = $invoices->where('jenis_pembayaran', 'qris')->sum('neto');
     $totalTransfer = $invoices->whereIn('jenis_pembayaran', ['transfer', 'bank', 'debit'])->sum('neto');
     $totalOmset = $invoices->sum('neto');
+
+    $isTunaiDimmed = (isset($activeKategori) && $activeKategori !== null && $activeKategori !== 'tunai');
+    $isQrisDimmed = (isset($activeKategori) && $activeKategori !== null && $activeKategori !== 'qris');
+    $isTransferDimmed = (isset($activeKategori) && $activeKategori !== null && $activeKategori !== 'transfer');
+    $dimStyle = 'opacity: 0.38; filter: grayscale(0.6); transition: all 0.2s ease-in-out;';
 @endphp
 
 <style>
@@ -67,7 +72,7 @@
         {{-- 4 Kartu Ringkasan Metode Pembayaran --}}
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px;">
             {{-- Tunai --}}
-            <div style="background: #202024; border: 1px solid #3f3f46; border-radius: 6px; padding: 10px 12px;">
+            <div style="background: #202024; border: 1px solid #3f3f46; border-radius: 6px; padding: 10px 12px; {{ $isTunaiDimmed ? $dimStyle : '' }}">
                 <div style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Tunai</div>
                 <div style="font-size: 17px; font-weight: 800; color: #ffffff; margin-top: 2px;">
                     Rp {{ number_format($totalTunai, 0, ',', '.') }}
@@ -75,7 +80,7 @@
             </div>
 
             {{-- QRIS --}}
-            <div style="background: #202024; border: 1px solid #3f3f46; border-radius: 6px; padding: 10px 12px;">
+            <div style="background: #202024; border: 1px solid #3f3f46; border-radius: 6px; padding: 10px 12px; {{ $isQrisDimmed ? $dimStyle : '' }}">
                 <div style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">QRIS</div>
                 <div style="font-size: 17px; font-weight: 800; color: #ffffff; margin-top: 2px;">
                     Rp {{ number_format($totalQris, 0, ',', '.') }}
@@ -83,7 +88,7 @@
             </div>
 
             {{-- Bank / Transfer --}}
-            <div style="background: #202024; border: 1px solid #3f3f46; border-radius: 6px; padding: 10px 12px;">
+            <div style="background: #202024; border: 1px solid #3f3f46; border-radius: 6px; padding: 10px 12px; {{ $isTransferDimmed ? $dimStyle : '' }}">
                 <div style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Bank / Transfer</div>
                 <div style="font-size: 17px; font-weight: 800; color: #ffffff; margin-top: 2px;">
                     Rp {{ number_format($totalTransfer, 0, ',', '.') }}
@@ -103,7 +108,7 @@
     {{-- Tabel Faktur Penjualan --}}
     @if ($invoices->isEmpty())
         <div style="text-align: center; padding: 32px; background: #18181b; border: 1px dashed #3f3f46; border-radius: 8px; color: #a1a1aa; font-size: 12px;">
-            Tidak ada data transaksi faktur penjualan pada periode ini.
+            Tidak ada data transaksi faktur penjualan{{ !empty($activeKategori) ? ' untuk kategori ' . strtoupper($activeKategori) : '' }} pada periode ini.
         </div>
     @else
         <div class="rekapan-kasir-table-wrapper">
