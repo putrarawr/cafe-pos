@@ -81,10 +81,46 @@
                     </div>
                     <div class="h-9 w-72 rounded-xl bg-zinc-200/50 animate-pulse"></div>
                     <div class="grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-4 gap-4">
-                        <div class="h-32 rounded-2xl bg-zinc-200/60 animate-pulse"></div>
-                        <div class="h-32 rounded-2xl bg-zinc-200/60 animate-pulse [animation-delay:100ms]"></div>
-                        <div class="h-32 rounded-2xl bg-zinc-200/60 animate-pulse [animation-delay:200ms]"></div>
-                        <div class="h-32 rounded-2xl bg-zinc-200/60 animate-pulse [animation-delay:300ms] hidden 2xl:block"></div>
+                        <div class="h-60 rounded-2xl bg-white border border-zinc-200 p-3.5 flex flex-col justify-between">
+                            <div class="h-36 rounded-xl bg-zinc-200/70 animate-pulse"></div>
+                            <div class="space-y-2 mt-2">
+                                <div class="h-4 w-3/4 rounded bg-zinc-200 animate-pulse"></div>
+                                <div class="flex justify-between items-center pt-2">
+                                    <div class="h-5 w-20 rounded bg-zinc-200 animate-pulse"></div>
+                                    <div class="h-4 w-12 rounded bg-zinc-200 animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="h-60 rounded-2xl bg-white border border-zinc-200 p-3.5 flex flex-col justify-between [animation-delay:100ms]">
+                            <div class="h-36 rounded-xl bg-zinc-200/70 animate-pulse"></div>
+                            <div class="space-y-2 mt-2">
+                                <div class="h-4 w-3/4 rounded bg-zinc-200 animate-pulse"></div>
+                                <div class="flex justify-between items-center pt-2">
+                                    <div class="h-5 w-20 rounded bg-zinc-200 animate-pulse"></div>
+                                    <div class="h-4 w-12 rounded bg-zinc-200 animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="h-60 rounded-2xl bg-white border border-zinc-200 p-3.5 flex flex-col justify-between [animation-delay:200ms]">
+                            <div class="h-36 rounded-xl bg-zinc-200/70 animate-pulse"></div>
+                            <div class="space-y-2 mt-2">
+                                <div class="h-4 w-3/4 rounded bg-zinc-200 animate-pulse"></div>
+                                <div class="flex justify-between items-center pt-2">
+                                    <div class="h-5 w-20 rounded bg-zinc-200 animate-pulse"></div>
+                                    <div class="h-4 w-12 rounded bg-zinc-200 animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="h-60 rounded-2xl bg-white border border-zinc-200 p-3.5 flex flex-col justify-between [animation-delay:300ms] hidden 2xl:flex">
+                            <div class="h-36 rounded-xl bg-zinc-200/70 animate-pulse"></div>
+                            <div class="space-y-2 mt-2">
+                                <div class="h-4 w-3/4 rounded bg-zinc-200 animate-pulse"></div>
+                                <div class="flex justify-between items-center pt-2">
+                                    <div class="h-5 w-20 rounded bg-zinc-200 animate-pulse"></div>
+                                    <div class="h-4 w-12 rounded bg-zinc-200 animate-pulse"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

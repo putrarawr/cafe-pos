@@ -1129,39 +1129,71 @@ function renderProduk() {
 
             const hasTier = (b.min_qty_2 && Number(b.nilai_tier_2) > 0) || (b.min_qty_3 && Number(b.nilai_tier_3) > 0) || (b.min_qty_1 && Number(b.nilai_tier_1) > 0);
             const tierBadgeProdukHtml = hasTier
-                ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-1.5 py-0.5 rounded-md mt-1"><svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1 -2.83 0l-9.17 -9.17a2 2 0 0 1 -0.59 -1.42v-5.99a2 2 0 0 1 2 -2h5.99a2 2 0 0 1 1.42 0.59l9.17 9.17a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Promo Qty</span>`
+                ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-800 bg-zinc-100 border border-zinc-200 px-1.5 py-0.5 rounded-md mt-1"><svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1 -2.83 0l-9.17 -9.17a2 2 0 0 1 -0.59 -1.42v-5.99a2 2 0 0 1 2 -2h5.99a2 2 0 0 1 1.42 0.59l9.17 9.17a2 2 0 0 1 0 2.83z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Promo Qty</span>`
                 : '';
 
             const fotoHtml = b.gambar
-                ? `<img src="${b.gambar}" alt="${b.nama_barang}" class="w-10 h-10 rounded-xl object-cover border border-zinc-200 shrink-0" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-10 h-10 rounded-xl ${tileTint(b.nama_barang)} flex items-center justify-center text-xs font-black select-none shrink-0\\'>${inisial(b.nama_barang)}</div>';" />`
-                : `<div class="w-10 h-10 rounded-xl ${tileTint(b.nama_barang)} flex items-center justify-center text-xs font-black select-none shrink-0">
+                ? `<img src="${b.gambar}" alt="${escapeHtml(b.nama_barang)}" class="max-h-28 max-w-full object-contain drop-shadow-xs group-hover:scale-105 transition-transform duration-300" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-14 h-14 rounded-2xl ${tileTint(b.nama_barang)} flex items-center justify-center text-base font-black text-zinc-700 select-none shadow-2xs\\'>${inisial(b.nama_barang)}</div>';" />`
+                : `<div class="w-14 h-14 rounded-2xl ${tileTint(b.nama_barang)} flex items-center justify-center text-base font-black text-zinc-700 select-none shadow-2xs">
                     ${inisial(b.nama_barang)}
                 </div>`;
 
             return `<button data-add="${b.id}" ${habis ? 'disabled' : ''} style="--i: ${Math.min(idx, 16)}"
-                class="${animate ? 'anim-fade-up ' : ''}relative group text-left bg-white rounded-2xl border p-4 flex flex-col gap-3 transition duration-200
-                       ${diKeranjang ? 'border-zinc-900 ring-1 ring-zinc-900 bg-zinc-50' : 'border-zinc-200'}
+                class="${animate ? 'anim-fade-up ' : ''}relative group text-left bg-white rounded-2xl border p-3.5 flex flex-col justify-between transition-all duration-200
+                       ${diKeranjang ? 'border-zinc-950 ring-2 ring-zinc-950 shadow-sm' : 'border-zinc-200/90 shadow-2xs hover:border-zinc-400 hover:shadow-md'}
                        ${habis
-                    ? 'opacity-40 cursor-not-allowed'
-                    : 'cursor-pointer hover:border-zinc-900 hover:shadow-lg hover:shadow-zinc-200/50 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]'}
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer hover:-translate-y-1 active:translate-y-0 active:scale-[0.98]'}
                        ${kelasRing}">
-                ${diKeranjang ? `<span class="absolute -top-2 -left-2 z-10 px-2 py-0.5 rounded-lg bg-zinc-900 text-white text-[10px] font-bold shadow-sm">Di keranjang</span>` : ''}
-                ${jumlahDiKeranjang > 0 ? `<span class="absolute bottom-3 right-3 min-w-6 h-6 px-1.5 rounded-lg bg-zinc-900 text-white text-[11px] font-bold flex items-center justify-center tabular-nums shadow-sm">×${jumlahDiKeranjang}</span>` : ''}
-                <div class="flex items-start justify-between gap-2">
+                
+                <!-- Wadah gambar berlatar abu-abu halus dan sudut rounded -->
+                <div class="relative w-full h-36 rounded-xl bg-zinc-100/70 border border-zinc-200/50 flex items-center justify-center p-3 overflow-hidden">
+                    <!-- Indikator kotak kiri atas -->
+                    ${diKeranjang
+                        ? `<div class="absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-md bg-black text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+                           </div>`
+                        : `<div class="absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-md border border-zinc-300/80 bg-white/90 flex items-center justify-center group-hover:border-zinc-700 transition-colors"></div>`
+                    }
+
+                    <!-- Badge jumlah item jika ada di keranjang -->
+                    ${jumlahDiKeranjang > 0
+                        ? `<span class="absolute top-2.5 right-2.5 z-10 px-2 py-0.5 rounded-lg bg-black text-white text-[11px] font-bold shadow-xs tabular-nums">×${jumlahDiKeranjang}</span>`
+                        : ''
+                    }
+
                     ${fotoHtml}
-                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap px-2 py-0.5 rounded-full
-                        ${habis ? 'bg-red-50 text-red-500' : menipis ? 'bg-amber-50 text-amber-600' : 'bg-zinc-50 text-zinc-500'}">
-                        ${habis
-                            ? `<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86l-8.29 14.29a2 2 0 0 0 1.71 3h16.58a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0 -3.42 0z"/></svg><span>Habis</span>`
-                            : menipis
-                                ? `<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21a9 9 0 1 0 0 -18a9 9 0 0 0 0 18z"/><path d="M12 7v5l3 3"/></svg><span>${stok} ${b.satuan ?? ''}</span>`
-                                : `<svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7l-8-4l-8 4v10l8 4l8-4z"/><path d="M12 7v5l3 2"/></svg><span>${stok} ${b.satuan ?? ''}</span>`}
-                    </span>
+
+                    ${habis
+                        ? `<div class="absolute inset-0 bg-white/85 backdrop-blur-[1px] flex items-center justify-center z-10">
+                            <span class="px-2.5 py-1 rounded-full bg-red-100 text-red-600 text-xs font-bold border border-red-200 shadow-2xs">Stok Habis</span>
+                           </div>`
+                        : ''
+                    }
                 </div>
-                <div>
-                    <p class="font-bold text-sm leading-snug line-clamp-2">${highlightMatch(b.nama_barang, state.search)}</p>
-                    <p class="font-black tracking-tight tabular-nums mt-1.5">${rupiah(b.harga_jual)} <span class="text-xs font-normal text-zinc-500">/ ${defaultUnit}</span></p>
-                    ${tierBadgeProdukHtml}
+
+                <!-- Informasi Barang -->
+                <div class="mt-3 flex flex-col gap-2 flex-1 justify-between w-full">
+                    <div>
+                        <p class="font-bold text-zinc-900 text-sm md:text-base leading-snug line-clamp-1 group-hover:text-black transition-colors" title="${escapeHtml(b.nama_barang)}">
+                            ${highlightMatch(b.nama_barang, state.search)}
+                        </p>
+                        ${tierBadgeProdukHtml}
+                    </div>
+
+                    <!-- Baris Harga (Hitam) & Stok (Menggantikan Bintang) -->
+                    <div class="flex items-center justify-between gap-2 pt-2 border-t border-zinc-100">
+                        <div class="flex items-baseline gap-1">
+                            <span class="text-base sm:text-lg font-black text-black tracking-tight tabular-nums">${rupiah(b.harga_jual)}</span>
+                            <span class="text-[11px] font-medium text-zinc-400">/${defaultUnit}</span>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0 ${habis ? 'text-red-500' : menipis ? 'text-amber-600' : 'text-zinc-500'}">
+                            ${habis
+                                ? `<span class="text-[11px] font-bold">Stok 0</span>`
+                                : `<span class="text-[11px] font-medium text-zinc-400">Stok:</span><span class="text-xs font-bold text-zinc-800 tabular-nums">${stok}</span>`
+                            }
+                        </div>
+                    </div>
                 </div>
             </button>`;
         })
