@@ -296,6 +296,7 @@ class KasirController extends Controller
                 ? (int) round(($p->diskon / ((int) $p->diskon + (int) $p->neto)) * 100)
                 : 0,
             'neto' => (int) $p->neto,
+            'biaya_kirim' => (int) $p->biaya_kirim,
             'jenis_pembayaran' => $p->jenis_pembayaran,
             'bayar' => (int) $p->bayar,
             'kembalian' => (int) $p->kembalian,
@@ -312,6 +313,7 @@ class KasirController extends Controller
                 'subtotal' => (int) $d->subtotal,
                 'is_bonus' => (bool) $d->is_bonus,
                 'promo_id' => $d->promo_id ? (int) $d->promo_id : null,
+                'jenis_pesanan' => $d->jenis_pesanan ?? 'dine_in',
             ]),
         ];
     }
@@ -330,6 +332,8 @@ class KasirController extends Controller
             'diskon_persen' => ['nullable', 'integer', 'min:0', 'max:100'],
             'jenis_pembayaran' => ['required', 'in:tunai,qris,transfer'],
             'bayar' => ['required', 'integer', 'min:0'],
+            'alamat_pengiriman' => ['nullable', 'string'],
+            'biaya_kirim' => ['nullable', 'integer', 'min:0'],
             'details' => ['required', 'array', 'min:1'],
             'details.*.barang_id' => ['required', 'integer', 'exists:barang,id'],
             'details.*.jumlah' => ['required', 'integer', 'min:1'],
@@ -337,7 +341,17 @@ class KasirController extends Controller
             'details.*.satuan' => ['nullable', 'string'],
             'details.*.is_bonus' => ['nullable', 'boolean'],
             'details.*.promo_id' => ['nullable', 'integer', 'exists:promo_bonus,id'],
+            'details.*.jenis_pesanan' => ['required', 'in:dine_in,take_away,delivery'],
         ]);
+
+        // Validasi alamat pengiriman wajib jika ada item delivery
+        $hasDelivery = collect($data['details'])->contains(fn ($d) => $d['jenis_pesanan'] === 'delivery');
+        if ($hasDelivery && empty($data['alamat_pengiriman'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Alamat pengiriman wajib diisi untuk pesanan Delivery.',
+            ], 422);
+        }
 
         $gudangId = $data['gudang_id'];
 
@@ -491,6 +505,7 @@ class KasirController extends Controller
                     'satuan' => $satuan,
                     'is_bonus' => $isBonus,
                     'promo_id' => $d['promo_id'] ?? null,
+                    'jenis_pesanan' => $d['jenis_pesanan'] ?? 'dine_in',
                 ];
             }
 
@@ -517,19 +532,29 @@ class KasirController extends Controller
             $karyawanId = Auth::guard('karyawan')->check() ? Auth::guard('karyawan')->id() : null;
             $userId = Auth::guard('web')->check() ? Auth::guard('web')->id() : null;
 
-            $penjualan = Penjualan::create([
-                'nomer_nota' => $nomerNota,
-                'karyawan_id' => $karyawanId,
-                'user_id' => $userId,
-                'gudang_id' => $gudangId,
-                'tanggal' => $data['tanggal'],
-                'total' => $total,
-                'diskon' => $diskonNominal,
-                'neto' => $neto,
-                'jenis_pembayaran' => $data['jenis_pembayaran'],
-                'bayar' => $bayar,
-                'kembalian' => max(0, $bayar - $neto),
-            ]);
+            // Tambahkan biaya kirim ke neto untuk perhitungan pembayaran
+        $netoWithKirim = $neto + (int) ($data['biaya_kirim'] ?? 0);
+
+        if ($data['jenis_pembayaran'] === 'tunai' && $data['bayar'] < $netoWithKirim) {
+            abort(422, 'Uang bayar kurang dari total');
+        }
+        $bayarFinal = $data['jenis_pembayaran'] === 'tunai' ? $data['bayar'] : $netoWithKirim;
+
+        $penjualan = Penjualan::create([
+            'nomer_nota' => $nomerNota,
+            'karyawan_id' => $karyawanId,
+            'user_id' => $userId,
+            'gudang_id' => $gudangId,
+            'tanggal' => $data['tanggal'],
+            'total' => $total,
+            'diskon' => $diskonNominal,
+            'neto' => $netoWithKirim,
+            'jenis_pembayaran' => $data['jenis_pembayaran'],
+            'bayar' => $bayarFinal,
+            'kembalian' => max(0, $bayarFinal - $netoWithKirim),
+            'alamat_pengiriman' => $data['alamat_pengiriman'] ?? null,
+            'biaya_kirim' => (int) ($data['biaya_kirim'] ?? 0),
+        ]);
 
             // ===== Bulk-insert DetailJual (1 query alih-alih N) =====
             $detailRows = [];
@@ -578,6 +603,7 @@ class KasirController extends Controller
                     'bonus_qty' => $bonusQty,
                     'bonus_satuan' => $bonusSatuan,
                     'bonus_hpp' => $bonusHpp,
+                    'jenis_pesanan' => $d['jenis_pesanan'] ?? 'dine_in',
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];

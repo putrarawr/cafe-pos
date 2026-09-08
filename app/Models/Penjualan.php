@@ -25,6 +25,8 @@ class Penjualan extends Model
         'jenis_pembayaran',
         'bayar',
         'kembalian',
+        'alamat_pengiriman',
+        'biaya_kirim',
     ];
 
     public function getActivitylogOptions(): LogOptions

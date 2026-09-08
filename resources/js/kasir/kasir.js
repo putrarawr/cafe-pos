@@ -21,7 +21,7 @@ const state = {
     barang: [],
     jenisBarang: [],
     gudang: [],
-    // keranjang: [{ barang_id, nama_barang, satuan, harga, harga_asli, jumlah, diskon }]
+    // keranjang: [{ barang_id, nama_barang, satuan, harga, harga_asli, jumlah, diskon, jenis_pesanan }]
     // harga_asli = harga normal per satuan, diskon = potongan rupiah dari harga bertingkat
     cart: [],
     gudangId: null,
@@ -33,6 +33,9 @@ const state = {
     bayar: 0,
     isUangPas: false,
     paymentExpanded: true,
+    alamatPengiriman: '',
+    biayaKirim: 0,
+    jenisPesanan: 'dine_in',
 };
 
 const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -92,7 +95,7 @@ function nominalDiskon() {
 }
 
 function totalNeto() {
-    return Math.max(0, totalKotor() - nominalDiskon());
+    return Math.max(0, totalKotor() - nominalDiskon() + (state.biayaKirim || 0));
 }
 
 function kembalian() {
@@ -106,12 +109,14 @@ function stokBarang(barang) {
 
 function stokTersedia(barang) {
     const dasar = stokBarang(barang);
-    const item = state.cart.find((i) => i.barang_id === barang.id);
-    if (!item) return dasar;
+    const lines = state.cart.filter((i) => i.barang_id === barang.id);
+    if (!lines.length) return dasar;
     const units = getUnitsForBarang(barang);
-    const uObj = units.find((u) => u.satuan === item.satuan);
-    const faktor = uObj ? uObj.faktor : 1;
-    return Math.max(0, dasar - item.jumlah * faktor);
+    const dipakai = lines.reduce((sum, item) => {
+        const uObj = units.find((u) => u.satuan === item.satuan);
+        return sum + item.jumlah * (uObj ? uObj.faktor : 1);
+    }, 0);
+    return Math.max(0, dasar - dipakai);
 }
 
 function namaGudangSekarang() {
@@ -124,7 +129,37 @@ function gudangStokTersedia(barang) {
         .map((g) => g.nama_gudang);
 }
 
+/**
+ * Group cart items by jenis_pesanan
+ * Returns object: { dine_in: [], take_away: [], delivery: [] }
+ */
+function getOrderGroups() {
+    const groups = {
+        dine_in: [],
+        take_away: [],
+        delivery: [],
+    };
+    state.cart.forEach((item) => {
+        const tipe = item.jenis_pesanan || 'dine_in';
+        if (groups[tipe]) {
+            groups[tipe].push(item);
+        } else {
+            groups.dine_in.push(item);
+        }
+    });
+    return groups;
+}
+
 // ------------------------- KERANJANG -------------------------
+
+const cartKey = (barangId, jenis) => `${barangId}:${jenis || 'dine_in'}`;
+
+function findCartLineKey(barangId) {
+    const lines = state.cart.filter((i) => i.barang_id === barangId && !i.is_bonus);
+    if (!lines.length) return null;
+    const samaTipe = lines.find((i) => i.jenis_pesanan === state.jenisPesanan);
+    return samaTipe?.key ?? lines[0].key;
+}
 
 function tambahKeCart(barangId) {
     const barang = state.barang.find((b) => b.id === barangId);
@@ -136,7 +171,9 @@ function tambahKeCart(barangId) {
     }
 
     const units = getUnitsForBarang(barang);
-    const existing = state.cart.find((i) => i.barang_id === barangId);
+    const existing = state.cart.find(
+        (i) => i.barang_id === barangId && i.jenis_pesanan === state.jenisPesanan && !i.is_bonus
+    );
     const satuanDefault = existing ? existing.satuan : units[0].satuan;
     const unitObj = units.find((u) => u.satuan === satuanDefault) ?? units[0];
     const faktor = unitObj ? unitObj.faktor : 1;
@@ -167,21 +204,23 @@ function tambahKeCart(barangId) {
         state.cart.push({
             barang_id: barang.id,
             nama_barang: barang.nama_barang,
+            key: cartKey(barang.id, state.jenisPesanan),
             satuan: satuanDefault,
             harga: hargaUnit,
             harga_asli: hargaUnit,
             jumlah: 1,
             diskon: 0,
+            jenis_pesanan: state.jenisPesanan,
         });
     }
     render();
 }
 
-function ubahSatuanItem(barangId, satuanBaru) {
-    const item = state.cart.find((i) => i.barang_id === barangId);
+function ubahSatuanItem(key, satuanBaru) {
+    const item = state.cart.find((i) => i.key === key);
     if (!item) return;
 
-    const barang = state.barang.find((b) => b.id === barangId);
+    const barang = state.barang.find((b) => b.id === item.barang_id);
     if (!barang) return;
 
     const units = getUnitsForBarang(barang);
@@ -202,11 +241,11 @@ function ubahSatuanItem(barangId, satuanBaru) {
     render();
 }
 
-function ubahJumlah(barangId, delta) {
-    const item = state.cart.find((i) => i.barang_id === barangId);
+function ubahJumlah(key, delta) {
+    const item = state.cart.find((i) => i.key === key);
     if (!item) return;
 
-    const barang = state.barang.find((b) => b.id === barangId);
+    const barang = state.barang.find((b) => b.id === item.barang_id);
     const units = barang ? getUnitsForBarang(barang) : [];
     const unitObj = units.find((u) => u.satuan === item.satuan);
     const faktor = unitObj ? unitObj.faktor : 1;
@@ -217,15 +256,33 @@ function ubahJumlah(barangId, delta) {
         return;
     }
     if (baruJumlah <= 0) {
-        state.cart = state.cart.filter((i) => i.barang_id !== barangId);
+        state.cart = state.cart.filter((i) => i.key !== key);
     } else {
         item.jumlah = baruJumlah;
     }
     render();
 }
 
-function hapusItem(barangId) {
-    state.cart = state.cart.filter((i) => i.barang_id !== barangId);
+/**
+ * Ubah tipe pesanan GLOBAL (default untuk item BARU).
+ * Item yang sudah ada di keranjang TIDAK diubah tipenya — tipe lama tetap.
+ */
+function setJenisPesananGlobal(tipe) {
+    const validTypes = ['dine_in', 'take_away', 'delivery'];
+    if (!validTypes.includes(tipe) || tipe === state.jenisPesanan) return;
+
+    state.jenisPesanan = tipe;
+
+    if (tipe !== 'delivery' && !state.cart.some((i) => i.jenis_pesanan === 'delivery')) {
+        state.alamatPengiriman = '';
+        state.biayaKirim = 0;
+    }
+
+    render();
+}
+
+function hapusItem(key) {
+    state.cart = state.cart.filter((i) => i.key !== key);
     render();
 }
 
@@ -233,11 +290,12 @@ let pendingHapusId = null;
 let pendingNontunaiPayload = null;
 let pendingDiskonPayload = null;
 const DISKON_BESAR_PERSEN = 30;
+const collapsedOrderGroups = new Set();
 
-function mintaHapusItem(barangId) {
-    const item = state.cart.find((i) => i.barang_id === barangId);
+function mintaHapusItem(key) {
+    const item = state.cart.find((i) => i.key === key);
     if (!item) return;
-    pendingHapusId = barangId;
+    pendingHapusId = key;
     const label = document.getElementById('label-hapus-item');
     if (label) label.textContent = `${item.nama_barang} (${item.jumlah} × ${rupiah(item.harga)})`;
     document.getElementById('modal-konfirmasi-hapus')?.classList.remove('hidden');
@@ -250,11 +308,11 @@ function tutupModalHapus() {
     fokusCartRow();
 }
 
-function setJumlah(barangId, jumlah) {
-    const item = state.cart.find((i) => i.barang_id === barangId);
+function setJumlah(key, jumlah) {
+    const item = state.cart.find((i) => i.key === key);
     if (!item) return;
 
-    const barang = state.barang.find((b) => b.id === barangId);
+    const barang = state.barang.find((b) => b.id === item.barang_id);
     const units = barang ? getUnitsForBarang(barang) : [];
     const unitObj = units.find((u) => u.satuan === item.satuan);
     const faktor = unitObj ? unitObj.faktor : 1;
@@ -281,6 +339,10 @@ function resetTransaksi() {
     state.isUangPas = false;
     state.jenisPembayaran = 'tunai';
     state.bankTransfer = 'BCA';
+    state.alamatPengiriman = '';
+    state.biayaKirim = 0;
+    state.jenisPesanan = 'dine_in';
+    collapsedOrderGroups.clear();
     bonusToastShown.clear();
     document.querySelectorAll('input[name="bank_transfer"]').forEach((radio) => {
         radio.checked = radio.value === 'BCA';
@@ -319,6 +381,12 @@ async function prosesBayar() {
     }
     if (!state.gudangId) {
         toast('Pilih gudang dulu', true);
+        return;
+    }
+    // Validasi alamat pengiriman jika ada item delivery
+    const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery');
+    if (hasDelivery && !state.alamatPengiriman.trim()) {
+        toast('Alamat pengiriman wajib diisi untuk pesanan Delivery', true);
         return;
     }
     if (state.jenisPembayaran === 'tunai' && state.bayar < totalNeto()) {
@@ -369,6 +437,8 @@ function buildPayload() {
         jenis_pembayaran: state.jenisPembayaran,
         bayar: nominalBayar,
         kembalian: nominalKembalian,
+        alamat_pengiriman: state.alamatPengiriman || null,
+        biaya_kirim: state.biayaKirim || 0,
         details: state.cart.map((i) => ({
             barang_id: i.barang_id,
             nama_barang: i.nama_barang,
@@ -382,6 +452,7 @@ function buildPayload() {
             subtotal: subtotalItem(i),
             is_bonus: !!i.is_bonus,
             promo_id: i.promo_id ?? null,
+            jenis_pesanan: i.jenis_pesanan || state.jenisPesanan,
         })),
     };
 }
@@ -463,6 +534,7 @@ async function simpanTransaksi(payload) {
                 subtotal: d.subtotal,
                 is_bonus: !!d.is_bonus,
                 promo_id: d.promo_id ?? cartMatch?.promo_id ?? null,
+                jenis_pesanan: d.jenis_pesanan ?? cartMatch?.jenis_pesanan ?? state.jenisPesanan,
             };
         });
 
@@ -557,58 +629,82 @@ function tampilkanStruk(payload) {
         }
     });
 
-    const groupedItems = [];
+    // Group items by jenis_pesanan
+    const tipeLabels = {
+        dine_in: 'Dine In',
+        take_away: 'Take Away',
+        delivery: 'Delivery',
+    };
+
+    const itemsByTipe = {};
     (payload.details || []).forEach((d) => {
         if (d.is_bonus) return;
-        groupedItems.push(d);
-        const children = bonusByParent[Number(d.barang_id)] || [];
-        children.forEach((b) => groupedItems.push(b));
+        const tipe = d.jenis_pesanan || 'dine_in';
+        if (!itemsByTipe[tipe]) itemsByTipe[tipe] = [];
+        itemsByTipe[tipe].push(d);
     });
-    bonusNoParent.forEach((b) => groupedItems.push(b));
+    bonusNoParent.forEach((b) => {
+        const tipe = b.jenis_pesanan || 'dine_in';
+        if (!itemsByTipe[tipe]) itemsByTipe[tipe] = [];
+        itemsByTipe[tipe].push(b);
+    });
 
-    const itemsHtml = groupedItems
-        .map((d, idx) => {
-            const nama = d.nama_barang
-                ?? state.barang.find((b) => b.id === d.barang_id)?.nama_barang
-                ?? '-';
-            const hargaUnit = Number(d.harga_asli ?? d.harga ?? 0);
-            const potonganItem = Number(d.diskon || 0);
-            const potonganItemPersen = persenPotongan(potonganItem, hargaUnit * Number(d.jumlah || 0));
-            const isBonus = !!d.is_bonus;
-            const namaPromo = d.nama_promo ?? null;
-            if (isBonus) {
-                return `
-                    <div class="pl-4 border-l-2 border-zinc-400 ml-2 -mt-1">
-                        <p class="font-semibold text-xs text-zinc-600 italic leading-snug">${escapeHtml(nama)}</p>
-                        <div class="flex justify-between items-start text-xs leading-normal">
-                            <span class="text-zinc-600">${d.jumlah} ${escapeHtml(d.satuan)} <span class="font-bold italic">(GRATIS${namaPromo ? ` • ${escapeHtml(namaPromo)}` : ''})</span></span>
-                            <div class="text-right">
-                                <span class="font-bold text-xs text-zinc-600">${rupiah(d.subtotal)}</span>
-                                <div class="text-[10px] font-bold text-zinc-700 mt-0.5">[BONUS]</div>
+    const tipeOrder = ['dine_in', 'take_away', 'delivery'];
+    const itemsHtml = tipeOrder
+        .filter((tipe) => itemsByTipe[tipe] && itemsByTipe[tipe].length > 0)
+        .map((tipe) => {
+            const info = tipeLabels[tipe];
+            const items = itemsByTipe[tipe];
+            const headerHtml = `
+                <div class="flex items-center gap-1.5 py-1 border-b border-dashed border-zinc-400">
+                    <span class="text-xs font-bold uppercase tracking-wide text-zinc-600">${info}</span>
+                </div>`;
+            const itemsHtml = items
+                .map((d, idx) => {
+                    const nama = d.nama_barang
+                        ?? state.barang.find((b) => b.id === d.barang_id)?.nama_barang
+                        ?? '-';
+                    const hargaUnit = Number(d.harga_asli ?? d.harga ?? 0);
+                    const potonganItem = Number(d.diskon || 0);
+                    const potonganItemPersen = persenPotongan(potonganItem, hargaUnit * Number(d.jumlah || 0));
+                    const isBonus = !!d.is_bonus;
+                    const namaPromo = d.nama_promo ?? null;
+                    if (isBonus) {
+                        return `
+                            <div class="pl-4 border-l-2 border-zinc-400 ml-2 -mt-1">
+                                <p class="font-semibold text-xs text-zinc-600 italic leading-snug">${escapeHtml(nama)}</p>
+                                <div class="flex justify-between items-start text-xs leading-normal">
+                                    <span class="text-zinc-600">${d.jumlah} ${escapeHtml(d.satuan)} <span class="font-bold italic">(GRATIS${namaPromo ? ` • ${escapeHtml(namaPromo)}` : ''})</span></span>
+                                    <div class="text-right">
+                                        <span class="font-bold text-xs text-zinc-600">${rupiah(d.subtotal)}</span>
+                                        <div class="text-[10px] font-bold text-zinc-700 mt-0.5">[BONUS]</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    return `
+                        <div class="space-y-0.5">
+                            <div class="flex items-baseline justify-between gap-3">
+                                <p class="font-bold text-sm text-zinc-900 leading-snug">${idx + 1}. ${escapeHtml(nama)}</p>
+                                ${potonganItem > 0
+                                    ? `<span class="text-xs font-semibold text-red-500 shrink-0">potongan -${potonganItemPersen}%</span>`
+                                    : ''}
+                            </div>
+                            <div class="flex justify-between items-start text-xs leading-normal">
+                                <span class="text-zinc-700">${d.jumlah} ${escapeHtml(d.satuan)} x ${rupiah(hargaUnit)}</span>
+                                <div class="text-right">
+                                    <span class="font-bold text-sm text-zinc-900">${rupiah(d.subtotal)}</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `;
-            }
-
-            return `
-                <div class="space-y-0.5">
-                    <div class="flex items-baseline justify-between gap-3">
-                        <p class="font-bold text-sm text-zinc-900 leading-snug">${idx + 1}. ${escapeHtml(nama)}</p>
-                        ${potonganItem > 0
-                            ? `<span class="text-xs font-semibold text-red-500 shrink-0">potongan -${potonganItemPersen}%</span>`
-                            : ''}
-                    </div>
-                    <div class="flex justify-between items-start text-xs leading-normal">
-                        <span class="text-zinc-700">${d.jumlah} ${escapeHtml(d.satuan)} x ${rupiah(hargaUnit)}</span>
-                        <div class="text-right">
-                            <span class="font-bold text-sm text-zinc-900">${rupiah(d.subtotal)}</span>
-                        </div>
-                    </div>
-                </div>
-            `;
+                    `;
+                })
+                .join('<div class="my-2"></div>');
+            return headerHtml + itemsHtml;
         })
-        .join('<div class="my-3"></div>');
+        .join('<div class="my-3 border-t border-dashed border-zinc-400"></div>');
 
     const jenisPembayaran = String(payload.jenis_pembayaran || 'tunai').toLowerCase();
     const labelBayar = jenisPembayaran === 'transfer'
@@ -630,6 +726,8 @@ function tampilkanStruk(payload) {
 
         const alamatHtml = toko.alamat ? `<p class="text-xs text-zinc-700 font-normal mt-0.5">${escapeHtml(toko.alamat)}</p>` : '';
         const kontakHtml = toko.kontak ? `<p class="text-xs text-zinc-700 font-normal mt-0.5">${escapeHtml(toko.kontak)}</p>` : '';
+        const biayaKirimVal = Number(payload.biaya_kirim || 0);
+        const netoSebelumKirim = Math.max(0, (payload.neto || 0) - biayaKirimVal);
 
         body.innerHTML = `
             <div class="text-center font-sans">
@@ -667,6 +765,18 @@ function tampilkanStruk(payload) {
                         <span>Diskon Nota ${diskonPersen > 0 ? `(${diskonPersen}%)` : ''}:</span>
                         <span class="text-zinc-900">- ${rupiah(potonganTransaksi)}</span>
                     </div>
+                ` : ''}
+
+                <div class="flex justify-between items-center font-semibold text-zinc-900">
+                    <span>Neto</span>
+                    <span>${rupiah(netoSebelumKirim)}</span>
+                </div>
+
+                ${biayaKirimVal > 0 ? `
+                <div class="flex justify-between items-center text-xs font-normal text-zinc-800">
+                    <span>Biaya Kirim</span>
+                    <span class="text-zinc-900">${rupiah(biayaKirimVal)}</span>
+                </div>
                 ` : ''}
             </div>
 
@@ -1011,6 +1121,7 @@ function cetakUlangRiwayat(r) {
                 : 0
         ),
         neto: r.neto,
+        biaya_kirim: r.biaya_kirim ?? 0,
         subtotal_normal: r.details.reduce((s, d) => s + Number(d.harga || 0) * Number(d.jumlah || 0), 0),
         potongan_barang: r.details.reduce((s, d) => s + Number(d.diskon || 0), 0),
         jenis_pembayaran: r.jenis_pembayaran,
@@ -1029,6 +1140,7 @@ function cetakUlangRiwayat(r) {
             subtotal: d.subtotal,
             is_bonus: !!d.is_bonus,
             promo_id: d.promo_id ?? null,
+            jenis_pesanan: d.jenis_pesanan ?? 'dine_in',
         })),
     });
     tutupModalRiwayat();
@@ -1124,7 +1236,7 @@ function renderProduk() {
             const kelasRing = sorot || (sorotCart ? 'ring-2 ring-zinc-900' : '');
             const units = getUnitsForBarang(b);
             const defaultUnit = units[0]?.satuan ?? b.satuan ?? 'Pcs';
-            const jumlahDiKeranjang = state.cart.find((i) => i.barang_id === b.id)?.jumlah ?? 0;
+            const jumlahDiKeranjang = state.cart.filter((i) => i.barang_id === b.id).reduce((s, i) => s + i.jumlah, 0);
             const diKeranjang = jumlahDiKeranjang > 0;
 
             const hasTier = (b.min_qty_2 && Number(b.nilai_tier_2) > 0) || (b.min_qty_3 && Number(b.nilai_tier_3) > 0) || (b.min_qty_1 && Number(b.nilai_tier_1) > 0);
@@ -1220,54 +1332,79 @@ function applyPromoBonusRules() {
 
         if (!mainItems || mainItems.length === 0) return;
 
-        let totalMainQty = 0;
-        mainItems.forEach((item) => {
-            const unitObj = units.find((u) => u.satuan === item.satuan);
-            const faktor = unitObj ? Number(unitObj.faktor || 1) : 1;
-            totalMainQty += Number(item.jumlah || 0) * faktor;
-        });
-
         const unitUtamaObj = units.find((u) => u.satuan === promo.satuan_utama);
         const faktorUtama = unitUtamaObj ? Number(unitUtamaObj.faktor || 1) : 1;
         const minQtyInBase = Number(promo.min_qty_utama || 1) * faktorUtama;
+        const qtyBonusPerBagi = Number(promo.qty_bonus || 1);
 
-        if (totalMainQty >= minQtyInBase) {
-            let multiplier = 1;
-            if (promo.is_kelipatan) {
-                multiplier = Math.floor(totalMainQty / minQtyInBase);
+        // Kumpulkan jumlah dasar item utama per tipe pesanan.
+        const qtyPerTipe = {};
+        mainItems.forEach((item) => {
+            const unitObj = units.find((u) => u.satuan === item.satuan);
+            const faktor = unitObj ? Number(unitObj.faktor || 1) : 1;
+            const tipe = item.jenis_pesanan || state.jenisPesanan;
+            qtyPerTipe[tipe] = (qtyPerTipe[tipe] || 0) + Number(item.jumlah || 0) * faktor;
+        });
+
+        const totalMainQty = Object.values(qtyPerTipe).reduce((s, q) => s + q, 0);
+        if (totalMainQty < minQtyInBase) return;
+
+        let multiplier = 1;
+        if (promo.is_kelipatan) {
+            multiplier = Math.floor(totalMainQty / minQtyInBase);
+        }
+
+        const totalBonusQty = qtyBonusPerBagi * multiplier;
+        if (totalBonusQty < 1) return;
+
+        const barangBonus = state.barang.find((b) => Number(b.id) === Number(promo.barang_bonus_id));
+        if (!barangBonus) return;
+
+        const defaultBonusUnit = promo.satuan_bonus || barangBonus.satuan || 'Pcs';
+
+        const stokTersediaBonus = stokTersedia(barangBonus);
+        if (stokTersediaBonus <= 0) {
+            const keyToast = `${promo.id}-${barangBonus.id}`;
+            if (!bonusToastShown.has(keyToast)) {
+                bonusToastShown.add(keyToast);
+                toast(`Stok barang bonus ${barangBonus.nama_barang} di gudang ini habis`, true);
             }
+            return;
+        }
+        bonusToastShown.delete(`${promo.id}-${barangBonus.id}`);
 
-            const totalBonusQty = Number(promo.qty_bonus || 1) * multiplier;
-            const barangBonus = state.barang.find((b) => Number(b.id) === Number(promo.barang_bonus_id));
-
-            if (barangBonus && totalBonusQty > 0) {
-                const defaultBonusUnit = promo.satuan_bonus || barangBonus.satuan || 'Pcs';
-
-                const stokTersediaBonus = stokTersedia(barangBonus);
-                if (stokTersediaBonus <= 0) {
-                    const keyToast = `${promo.id}-${barangBonus.id}`;
-                    if (!bonusToastShown.has(keyToast)) {
-                        bonusToastShown.add(keyToast);
-                        toast(`Stok barang bonus ${barangBonus.nama_barang} di gudang ini habis`, true);
-                    }
-                    return;
+        // Alokasikan jatah bonus ke tiap tipe sesuai porsi jumlah dasarnya,
+        // agar bonus tampil di grup tipe yang benar dan konsisten dengan server.
+        let sisaBonus = totalBonusQty;
+        Object.entries(qtyPerTipe)
+            .filter(([, q]) => q > 0)
+            .sort((a, b) => b[1] - a[1])
+            .forEach(([tipe, qty], idx, arr) => {
+                const isTerakhir = idx === arr.length - 1;
+                let jatah;
+                if (isTerakhir) {
+                    jatah = sisaBonus;
+                } else {
+                    jatah = Math.floor((qty / totalMainQty) * totalBonusQty);
                 }
-                bonusToastShown.delete(`${promo.id}-${barangBonus.id}`);
+                if (jatah < 1) return;
+                sisaBonus -= jatah;
 
                 bonusToAdd.push({
                     barang_id: barangBonus.id,
                     nama_barang: barangBonus.nama_barang,
                     nama_promo: promo.nama_promo,
+                    key: `${cartKey(barangBonus.id, tipe)}:bonus:${promo.id}:${tipe}`,
                     satuan: defaultBonusUnit,
                     harga: 0,
                     harga_asli: 0,
-                    jumlah: totalBonusQty,
+                    jumlah: jatah,
                     diskon: 0,
                     is_bonus: true,
                     promo_id: promo.id,
+                    jenis_pesanan: tipe,
                 });
-            }
-        }
+            });
     });
 
     bonusToAdd.forEach((bonus) => {
@@ -1335,6 +1472,148 @@ function updateCartTierPrices() {
     applyPromoBonusRules();
 }
 
+function buildCartCard(i, idx) {
+    if (i.is_bonus) {
+        return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/80 rounded-xl p-2.5 shadow-2xs space-y-1.5 transition-colors duration-150">
+            <div class="flex items-center gap-2.5">
+                <div class="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-zinc-100/90 border border-zinc-200 flex items-center justify-center text-[13px] font-black select-none text-zinc-700 shadow-2xs">
+                    BNS
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-[10px] font-bold text-zinc-900 bg-zinc-200 border border-zinc-300 px-1.5 py-0.5 rounded-md shrink-0">[BONUS]</span>
+                        <p class="text-[13px] font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
+                        ${tipeBadgeHtml(i.jenis_pesanan)}
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-0.5">
+                        <span class="text-[13px] font-bold text-emerald-500 tabular-nums">Rp 0</span>
+                        <span class="text-xs font-medium text-zinc-400 tabular-nums">x${i.jumlah} (GRATIS)</span>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id));
+    const units = barang ? getUnitsForBarang(barang) : [{ satuan: i.satuan, harga_jual: i.harga }];
+    const selectedUnitObj = units.find((u) => u.satuan === i.satuan) ?? units[0];
+
+    const customUnitOptionsHtml = units
+        .map((u) => {
+            const active = u.satuan === i.satuan;
+            const checkIcon = `<svg class="w-3.5 h-3.5 shrink-0 text-white" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>`;
+            return `<button type="button" data-custom-unit-select="${i.key}" data-unit-val="${u.satuan}"
+                class="w-full flex items-center justify-between gap-2 text-left text-xs rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${active
+                    ? 'bg-zinc-900 text-white font-bold shadow-xs'
+                    : 'text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 font-semibold'
+                }">
+                <span class="truncate">${u.satuan} <span class="${active ? 'text-zinc-300 font-normal' : 'text-zinc-500 font-normal'}">(${rupiah(u.harga_jual)})</span></span>
+                ${active ? checkIcon : ''}
+            </button>`;
+        })
+        .join('');
+
+    const currentHarga = i.harga ?? selectedUnitObj.harga_jual;
+    const fotoUrl = barang?.foto || barang?.gambar || null;
+    const thumbHtml = fotoUrl
+        ? `<img src="${fotoUrl}" alt="${escapeHtml(i.nama_barang)}" class="w-full h-full object-contain drop-shadow-2xs" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'text-sm font-black text-zinc-600\\'>${inisial(i.nama_barang)}</span>';">`
+        : `<span class="text-sm font-black text-zinc-600">${inisial(i.nama_barang)}</span>`;
+
+    return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/80 hover:border-zinc-300 rounded-xl p-2.5 shadow-2xs space-y-1.5 transition-all duration-150 ${cartIdx === idx ? 'ring-2 ring-black' : ''}">
+        <div class="flex items-center gap-2.5">
+            <!-- Foto Makanan / Produk Persegi Besar -->
+            <div class="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-zinc-100/80 border border-zinc-200/70 p-1 flex items-center justify-center select-none shadow-2xs">
+                ${thumbHtml}
+            </div>
+
+            <!-- Info & Kontrol -->
+            <div class="min-w-0 flex-1">
+                <!-- Judul Item -->
+                <div class="flex items-center justify-between gap-2">
+                    <p class="text-[13px] font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
+                    ${tipeBadgeHtml(i.jenis_pesanan)}
+                </div>
+
+                <!-- Harga Hijau & Pengali / Satuan -->
+                <div class="flex items-center gap-1.5 mt-0.5">
+                    <span class="text-[13px] font-bold text-emerald-500 tabular-nums">${rupiah(currentHarga)}</span>
+                    <span class="text-xs font-medium text-zinc-400 tabular-nums">x${i.jumlah}</span>
+                    
+                    ${units.length > 1
+                        ? `<div class="relative ml-0.5" data-unit-dropdown-wrapper="${i.key}">
+                            <button type="button" data-unit-dropdown-btn="${i.key}"
+                                class="inline-flex items-center gap-0.5 text-[11px] font-semibold text-zinc-500 hover:text-zinc-800 bg-zinc-100 hover:bg-zinc-200/70 px-1.5 py-0.5 rounded transition-colors cursor-pointer group/unit">
+                                <span>${selectedUnitObj.satuan}</span>
+                                <svg data-unit-dropdown-chevron="${i.key}" class="w-2.5 h-2.5 text-zinc-400 group-hover/unit:text-zinc-700 transition-transform duration-200" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4 6l4 4 4-4"/>
+                                </svg>
+                            </button>
+                            <div data-unit-dropdown-menu="${i.key}"
+                                class="hidden anim-scale-in absolute left-0 top-full mt-1.5 min-w-[185px] w-max max-w-[240px] max-h-52 overflow-y-auto z-40 bg-white border border-zinc-200 rounded-xl shadow-xl shadow-zinc-950/10 p-1 space-y-0.5">
+                                ${customUnitOptionsHtml}
+                            </div>
+                        </div>`
+                        : `<span class="text-[11px] text-zinc-400 font-normal">/ ${selectedUnitObj.satuan}</span>`
+                    }
+                </div>
+
+                <!-- Baris Tombol Kontrol: Minus - Qty - Plus (Hitam Kotak/Persegi) & Hapus (Tempat Sampah Kanan) -->
+                <div class="flex items-center justify-between gap-2 mt-1.5">
+                    <div class="flex items-center gap-2">
+                        <button data-minus="${i.key}" type="button" 
+                            class="w-5 h-5 rounded-md hover:bg-zinc-100 text-zinc-800 font-bold transition flex items-center justify-center cursor-pointer text-sm select-none leading-none" 
+                            title="Kurangi">−</button>
+                        <input data-qty="${i.key}" type="number" min="1" value="${i.jumlah}"
+                            class="w-5 text-center text-[11px] font-bold text-zinc-900 tabular-nums bg-transparent focus:outline-none focus:bg-zinc-100 rounded py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
+                        <button data-plus="${i.key}" type="button" 
+                            class="w-5 h-5 rounded-md bg-black hover:bg-zinc-800 text-white font-bold transition flex items-center justify-center cursor-pointer text-xs shadow-xs select-none" 
+                            title="Tambah">
+                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <button data-del="${i.key}" type="button" class="text-zinc-400 hover:text-red-500 transition-colors p-1 cursor-pointer rounded-lg hover:bg-zinc-100" title="Hapus item">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        ${Number(i.diskon || 0) > 0
+            ? `<div class="flex items-center justify-between pt-1 border-t border-zinc-100 text-[11px]">
+                <span class="text-zinc-400 font-medium">Potongan barang</span>
+                <span class="text-zinc-700 font-semibold tabular-nums">−${rupiah(i.diskon * i.jumlah)} (${persenPotongan(i.diskon, (i.harga_asli ?? i.harga) * i.jumlah)}%)</span>
+            </div>`
+            : ''}
+    </div>`;
+}
+
+const TIPE_ICON_SVG = {
+    dine_in: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>',
+    take_away: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
+    delivery: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
+};
+
+const TIPE_LABEL = { dine_in: 'Dine In', take_away: 'Take Away', delivery: 'Delivery' };
+
+const TIPE_BADGE = {
+    dine_in: { cls: 'bg-zinc-100 text-zinc-600 border-zinc-200', label: 'Dine In' },
+    take_away: { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: 'Take Away' },
+    delivery: { cls: 'bg-sky-50 text-sky-700 border-sky-200', label: 'Delivery' },
+};
+
+function tipeBadgeHtml(jenis) {
+    const tipe = TIPE_BADGE[jenis] ? jenis : 'dine_in';
+    const b = TIPE_BADGE[tipe] || TIPE_BADGE.dine_in;
+    return `<span class="inline-flex items-center gap-1 text-[10px] font-bold ${b.cls} border px-1.5 py-0.5 rounded-md shrink-0">
+                ${TIPE_ICON_SVG[tipe] || ''} ${b.label}
+            </span>`;
+}
+
 function renderCart() {
     const wrap = document.getElementById('cart-items');
     if (!wrap) return;
@@ -1362,100 +1641,56 @@ function renderCart() {
             <p class="text-xs text-zinc-400 mt-0.5">Pilih produk di sebelah kiri untuk menambahkan</p>
         </div>`;
     } else {
-        wrap.innerHTML = state.cart
-            .map((i, idx) => {
-                if (i.is_bonus) {
-                    return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/90 rounded-2xl p-3 shadow-2xs space-y-2 transition-colors duration-150">
-                        <div class="flex items-start gap-3">
-                            <div class="w-12 h-12 rounded-full overflow-hidden shrink-0 bg-zinc-100 border border-zinc-200 flex items-center justify-center text-xs font-black select-none text-zinc-700">
-                                BNS
-                            </div>
-                            <div class="min-w-0 flex-1">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-[10px] font-bold text-zinc-900 bg-zinc-200 border border-zinc-300 px-1.5 py-0.5 rounded-md shrink-0">[BONUS]</span>
-                                    <p class="text-sm font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
-                                </div>
-                                <p class="text-xs text-zinc-500 mt-0.5">${i.jumlah} ${i.satuan} (GRATIS)</p>
-                                <p class="text-sm font-black text-zinc-900 tabular-nums mt-1">Rp 0</p>
-                            </div>
-                        </div>
-                    </div>`;
-                }
+        const tipeOrder = [
+            { key: 'dine_in', label: 'Dine In', icon: TIPE_ICON_SVG.dine_in },
+            { key: 'take_away', label: 'Take Away', icon: TIPE_ICON_SVG.take_away },
+            { key: 'delivery', label: 'Delivery', icon: TIPE_ICON_SVG.delivery },
+        ];
+        const groups = getOrderGroups();
+        const parts = [];
 
-                const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id));
-                const units = barang ? getUnitsForBarang(barang) : [{ satuan: i.satuan, harga_jual: i.harga }];
-                const selectedUnitObj = units.find((u) => u.satuan === i.satuan) ?? units[0];
+        tipeOrder.forEach(({ key, label, icon }) => {
+            const items = groups[key];
+            if (!items?.length) return;
 
-                const customUnitOptionsHtml = units
-                    .map((u) => {
-                        const active = u.satuan === i.satuan;
-                        const checkIcon = `<svg class="w-3.5 h-3.5 shrink-0 text-white" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>`;
-                        return `<button type="button" data-custom-unit-select="${i.barang_id}" data-unit-val="${u.satuan}"
-                            class="w-full flex items-center justify-between gap-2 text-left text-xs rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${active
-                                ? 'bg-zinc-900 text-white font-bold shadow-xs'
-                                : 'text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 font-semibold'
-                            }">
-                            <span class="truncate">${u.satuan} <span class="${active ? 'text-zinc-300 font-normal' : 'text-zinc-500 font-normal'}">(${rupiah(u.harga_jual)})</span></span>
-                            ${active ? checkIcon : ''}
-                        </button>`;
-                    })
-                    .join('');
+            const collapsed = collapsedOrderGroups.has(key);
+            const subTotalGrup = items.reduce((s, i) => s + subtotalItem(i), 0);
 
-                const currentHarga = i.harga ?? selectedUnitObj.harga_jual;
-                const fotoUrl = barang?.foto || barang?.gambar || null;
-                const thumbHtml = fotoUrl
-                    ? `<img src="${fotoUrl}" alt="${escapeHtml(i.nama_barang)}" class="w-full h-full object-cover rounded-full">`
-                    : inisial(i.nama_barang);
+            const itemsHtml = items
+                .map((i) => buildCartCard(i, state.cart.indexOf(i)))
+                .join('');
 
-                return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/90 hover:border-zinc-300 rounded-2xl p-3 shadow-2xs space-y-2 transition-all duration-150 ${cartIdx === idx ? 'ring-2 ring-zinc-900 bg-zinc-50/50' : ''}">
-                    <div class="flex items-start gap-3">
-                        <div class="w-12 h-12 rounded-full overflow-hidden shrink-0 ${tileTint(i.nama_barang)} flex items-center justify-center text-xs font-black select-none border border-zinc-200 shadow-2xs">
-                            ${thumbHtml}
-                        </div>
-                        <div class="min-w-0 flex-1">
-                            <div class="flex items-start justify-between gap-1">
-                                <p class="text-sm font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
-                                <button data-del="${i.barang_id}" type="button" class="text-zinc-400 hover:text-red-600 transition-colors p-0.5 cursor-pointer shrink-0 -mr-1" title="Hapus item">
-                                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
-                                    </svg>
-                                </button>
-                            </div>
-
-                            <div class="relative mt-0.5" data-unit-dropdown-wrapper="${i.barang_id}">
-                                <button type="button" data-unit-dropdown-btn="${i.barang_id}"
-                                    class="inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-800 transition-colors cursor-pointer group/unit">
-                                    <span>${selectedUnitObj.satuan}</span>
-                                    <svg data-unit-dropdown-chevron="${i.barang_id}" class="w-3 h-3 text-zinc-400 group-hover/unit:text-zinc-700 transition-transform duration-200" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M4 6l4 4 4-4"/>
-                                    </svg>
-                                </button>
-                                <div data-unit-dropdown-menu="${i.barang_id}"
-                                    class="hidden anim-scale-in absolute left-0 top-full mt-1.5 min-w-[185px] w-max max-w-[240px] max-h-52 overflow-y-auto z-40 bg-white border border-zinc-200 rounded-xl shadow-xl shadow-zinc-950/10 p-1 space-y-0.5">
-                                    ${customUnitOptionsHtml}
-                                </div>
-                            </div>
-
-                            <div class="flex items-center justify-between gap-2 mt-2">
-                                <p class="text-sm font-black text-zinc-900 tabular-nums">${rupiah(currentHarga)}</p>
-                                <div class="flex items-center gap-1 bg-zinc-50 border border-zinc-200/90 rounded-full px-1.5 py-0.5 shrink-0 shadow-2xs">
-                                    <button data-plus="${i.barang_id}" type="button" class="w-5 h-5 rounded-full hover:bg-white text-zinc-700 font-bold transition flex items-center justify-center cursor-pointer text-xs select-none" title="Tambah">+</button>
-                                    <input data-qty="${i.barang_id}" type="number" min="1" value="${i.jumlah}"
-                                        class="w-6 text-center text-xs font-bold tabular-nums bg-transparent focus:outline-none focus:bg-white rounded py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                                    <button data-minus="${i.barang_id}" type="button" class="w-5 h-5 rounded-full hover:bg-white text-zinc-700 font-bold transition flex items-center justify-center cursor-pointer text-xs select-none" title="Kurangi">−</button>
-                                </div>
-                            </div>
-                        </div>
+            const deliveryFields = key === 'delivery'
+                ? `<div class="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-2.5">
+                    <div>
+                        <label for="input-alamat-pengiriman" class="block text-xs font-bold text-zinc-600 mb-1">Alamat Pengiriman <span class="text-red-500">*</span></label>
+                        <textarea id="input-alamat-pengiriman" rows="2" placeholder="Isi alamat lengkap untuk pengantaran" class="w-full text-xs rounded-xl border border-zinc-200 bg-white px-3 py-2 focus:outline-none focus:border-zinc-900 transition-colors resize-none">${escapeHtml(state.alamatPengiriman)}</textarea>
                     </div>
-                    ${Number(i.diskon || 0) > 0
-                        ? `<div class="flex items-center justify-between pt-1.5 border-t border-zinc-100 text-[11px]">
-                            <span class="text-zinc-400 font-medium">Potongan barang</span>
-                            <span class="text-zinc-700 font-semibold tabular-nums">−${rupiah(i.diskon * i.jumlah)} (${persenPotongan(i.diskon, (i.harga_asli ?? i.harga) * i.jumlah)}%)</span>
-                        </div>`
-                        : ''}
-                </div>`;
-            })
-            .join('');
+                    <div>
+                        <label for="input-biaya-kirim" class="block text-xs font-bold text-zinc-600 mb-1">Biaya Kirim</label>
+                        <input id="input-biaya-kirim" type="text" inputmode="numeric" placeholder="0" value="${state.biayaKirim ? state.biayaKirim.toLocaleString('id-ID') : ''}" class="w-full text-right text-sm font-semibold tabular-nums rounded-xl border border-zinc-200 bg-white px-3 py-2 focus:outline-none focus:border-zinc-900 transition-colors">
+                    </div>
+                </div>`
+                : '';
+
+            parts.push(`<div class="space-y-2">
+                <button type="button" data-toggle-order-group="${key}" title="${collapsed ? 'Buka grup' : 'Tutup grup'}"
+                    class="w-full flex items-center justify-between gap-2 rounded-lg px-1 py-1 cursor-pointer select-none group/og">
+                    <span class="flex items-center gap-1.5 min-w-0">
+                        <svg class="w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${collapsed ? '' : 'rotate-90'}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg>
+                        <span class="text-xs font-bold text-zinc-800 uppercase tracking-wide truncate">${icon} ${label}</span>
+                        <span class="text-[10px] font-semibold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-full px-1.5 py-0.5 tabular-nums">${items.length} item</span>
+                    </span>
+                    <span class="text-[11px] font-bold text-zinc-400 tabular-nums">${rupiah(subTotalGrup)}</span>
+                </button>
+                <div data-order-items="${key}" class="space-y-2 ${collapsed ? 'hidden' : ''}">
+                    ${itemsHtml}
+                    ${deliveryFields}
+                </div>
+            </div>`);
+        });
+
+        wrap.innerHTML = parts.join('');
     }
 
     const badge = document.getElementById('badge-cart-count');
@@ -1472,6 +1707,9 @@ function renderCart() {
 
     const lblTotal = document.getElementById('lbl-total');
     if (lblTotal) lblTotal.textContent = rupiah(totalNormal());
+
+    const lblNetoPra = document.getElementById('lbl-neto-pra');
+    if (lblNetoPra) lblNetoPra.textContent = rupiah(Math.max(0, totalKotor() - nominalDiskon()));
 
     const lblNeto = document.getElementById('lbl-neto');
     if (lblNeto) {
@@ -1491,6 +1729,12 @@ function renderCart() {
         rowPotonganBarang.classList.toggle('hidden', potonganBarang <= 0);
         if (potonganBarang > 0) lblPotonganBarang.textContent = `- ${rupiah(potonganBarang)}`;
     }
+
+    const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery');
+    const rowBiayaKirim = document.getElementById('row-biaya-kirim');
+    const lblBiayaKirim = document.getElementById('lbl-biaya-kirim');
+    if (rowBiayaKirim) rowBiayaKirim.classList.toggle('hidden', !hasDelivery);
+    if (lblBiayaKirim) lblBiayaKirim.textContent = rupiah(state.biayaKirim || 0);
 
     const potonganNota = nominalDiskon();
     const rowDiskonNota = document.getElementById('row-diskon-nota');
@@ -1550,6 +1794,22 @@ function renderCart() {
     }
 
     renderPaymentMethodPills();
+    renderTipePicker();
+}
+
+function renderTipePicker() {
+    document.querySelectorAll('[data-tipe-pesan]').forEach((btn) => {
+        const aktif = btn.dataset.tipePesan === state.jenisPesanan;
+        btn.classList.toggle('bg-zinc-900', aktif);
+        btn.classList.toggle('text-white', aktif);
+        btn.classList.toggle('border-zinc-900', aktif);
+        btn.classList.toggle('shadow-xs', aktif);
+        btn.classList.toggle('bg-zinc-50', !aktif);
+        btn.classList.toggle('text-zinc-600', !aktif);
+        btn.classList.toggle('border-zinc-200', !aktif);
+        btn.classList.toggle('hover:border-zinc-400', !aktif);
+        btn.classList.toggle('hover:text-zinc-900', !aktif);
+    });
 }
 
 function renderGudangStokInfo() {
@@ -1948,6 +2208,11 @@ async function init() {
     );
     gudangSetValue = ddGudang.setValue;
 
+    // Pilih Tipe Pesanan Global
+    document.querySelectorAll('[data-tipe-pesan]').forEach((btn) => {
+        btn.addEventListener('click', () => setJenisPesananGlobal(btn.dataset.tipePesan));
+    });
+
     // Modal Konfirmasi Gudang
     document.getElementById('btn-batal-gudang')?.addEventListener('click', () => {
         document.getElementById('modal-konfirmasi-gudang')?.classList.add('hidden');
@@ -2164,7 +2429,7 @@ async function init() {
                     if (!inCart) {
                         toast('Item tidak ada di keranjang. Tekan Ctrl+↓ untuk memilih di keranjang', true);
                     } else {
-                        ubahJumlah(barangId, -1);
+                        ubahJumlah(findCartLineKey(barangId), -1);
                     }
                     focusSorot();
                 }
@@ -2209,18 +2474,28 @@ async function init() {
             const unitBtn = e.target.closest('[data-unit-dropdown-btn]');
             const unitSelect = e.target.closest('[data-custom-unit-select]');
 
-            if (plus) ubahJumlah(Number(plus.dataset.plus), 1);
-            if (minus) ubahJumlah(Number(minus.dataset.minus), -1);
+            if (plus) ubahJumlah(plus.dataset.plus, 1);
+            if (minus) ubahJumlah(minus.dataset.minus, -1);
             if (plus || minus) {
                 setTimeout(fokusCartRow, 0);
             }
-            if (del) mintaHapusItem(Number(del.dataset.del));
+            if (del) mintaHapusItem(del.dataset.del);
+
+            const toggleGroupBtn = e.target.closest('[data-toggle-order-group]');
+            if (toggleGroupBtn) {
+                e.stopPropagation();
+                const key = toggleGroupBtn.dataset.toggleOrderGroup;
+                if (collapsedOrderGroups.has(key)) collapsedOrderGroups.delete(key);
+                else collapsedOrderGroups.add(key);
+                renderCart();
+                return;
+            }
 
             if (unitBtn) {
                 e.stopPropagation();
-                const barangId = unitBtn.dataset.unitDropdownBtn;
-                const menu = document.querySelector(`[data-unit-dropdown-menu="${barangId}"]`);
-                const chevron = document.querySelector(`[data-unit-dropdown-chevron="${barangId}"]`);
+                const unitKey = unitBtn.dataset.unitDropdownBtn;
+                const menu = document.querySelector(`[data-unit-dropdown-menu="${unitKey}"]`);
+                const chevron = document.querySelector(`[data-unit-dropdown-chevron="${unitKey}"]`);
 
                 const isHidden = menu?.classList.contains('hidden');
 
@@ -2238,28 +2513,66 @@ async function init() {
 
             if (unitSelect) {
                 e.stopPropagation();
-                const barangId = Number(unitSelect.dataset.customUnitSelect);
+                const unitKey = unitSelect.dataset.customUnitSelect;
                 const satuan = unitSelect.dataset.unitVal;
-                ubahSatuanItem(barangId, satuan);
+                ubahSatuanItem(unitKey, satuan);
                 setTimeout(fokusCartRow, 0);
             }
         });
 
         cartItems.addEventListener('input', (e) => {
+            const alamatEl = e.target.closest('#input-alamat-pengiriman');
+            if (alamatEl) {
+                state.alamatPengiriman = alamatEl.value;
+                return;
+            }
+
+            const biayaEl = e.target.closest('#input-biaya-kirim');
+            if (biayaEl) {
+                const el = e.target;
+                const caret = el.selectionStart ?? el.value.length;
+                const digitsBeforeCaret = el.value.slice(0, caret).replace(/\D/g, '').length;
+                const raw = el.value.replace(/\D/g, '');
+                let restorePos = 0;
+                if (raw !== '') {
+                    const val = Number(raw);
+                    const formatted = val.toLocaleString('id-ID');
+                    el.value = formatted;
+                    state.biayaKirim = val;
+                    let pos = 0;
+                    let count = 0;
+                    while (pos < formatted.length && count < digitsBeforeCaret) {
+                        if (/\d/.test(formatted[pos])) count++;
+                        pos++;
+                    }
+                    restorePos = pos;
+                } else {
+                    el.value = '';
+                    state.biayaKirim = 0;
+                }
+                renderCart();
+                const fresh = document.getElementById('input-biaya-kirim');
+                if (fresh) {
+                    fresh.focus();
+                    fresh.setSelectionRange(restorePos, restorePos);
+                }
+                return;
+            }
+
             const qty = e.target.closest('[data-qty]');
             if (!qty) return;
-            const id = qty.dataset.qty;
+            const qtyKey = qty.dataset.qty;
             const raw = qty.value;
             const parsed = Math.floor(Number(raw));
             if (raw === '') return;
             if (!Number.isFinite(parsed) || parsed <= 0) {
-                const item = state.cart.find((i) => i.barang_id === Number(id));
+                const item = state.cart.find((i) => i.key === qtyKey);
                 qty.value = item ? String(item.jumlah) : '';
                 qty.focus();
                 return;
             }
-            setJumlah(Number(id), raw);
-            const fresh = document.querySelector(`[data-qty="${id}"]`);
+            setJumlah(qtyKey, raw);
+            const fresh = document.querySelector(`[data-qty="${qtyKey}"]`);
             if (fresh && fresh !== e.target) fresh.focus();
         });
 
@@ -2280,7 +2593,7 @@ async function init() {
             }
             if (cartIdx < 0 || cartIdx >= state.cart.length) return;
             if (state.cart[cartIdx]?.is_bonus) return;
-            const id = state.cart[cartIdx].barang_id;
+            const idKey = state.cart[cartIdx].key;
 
             if (e.key === 'ArrowUp') {
                 e.preventDefault();
@@ -2293,26 +2606,26 @@ async function init() {
             } else if (e.key === '-' || e.key === '_') {
                 e.preventDefault();
                 e.stopPropagation();
-                ubahJumlah(id, -1);
+                ubahJumlah(idKey, -1);
                 fokusCartRow();
             } else if (e.key === '+' || e.key === '=') {
                 e.preventDefault();
                 e.stopPropagation();
-                tambahKeCart(id);
+                ubahJumlah(idKey, 1);
                 fokusCartRow();
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 e.preventDefault();
                 e.stopPropagation();
-                mintaHapusItem(id);
+                mintaHapusItem(idKey);
             } else if (e.key === 'r' || e.key === 'R') {
                 e.preventDefault();
                 e.stopPropagation();
-                const menu = document.querySelector(`[data-unit-dropdown-menu="${id}"]`);
+                const menu = document.querySelector(`[data-unit-dropdown-menu="${idKey}"]`);
                 if (menu) {
                     document.querySelectorAll('[data-unit-dropdown-menu]').forEach((m) => m.classList.add('hidden'));
                     document.querySelectorAll('[data-unit-dropdown-chevron]').forEach((c) => c.classList.remove('rotate-180'));
                     menu.classList.remove('hidden');
-                    const chevron = document.querySelector(`[data-unit-dropdown-chevron="${id}"]`);
+                    const chevron = document.querySelector(`[data-unit-dropdown-chevron="${idKey}"]`);
                     if (chevron) chevron.classList.add('rotate-180');
                     const opt = menu.querySelector('[data-custom-unit-select]');
                     if (opt) opt.focus();
@@ -2408,6 +2721,7 @@ async function init() {
             total: totalKotor(),
             diskon: nominalDiskon(),
             neto: totalNeto(),
+            biaya_kirim: state.biayaKirim || 0,
             subtotal_normal: totalNormal(),
             potongan_barang: totalPotonganBarang(),
             jenis_pembayaran: state.jenisPembayaran,

@@ -27,6 +27,7 @@ class DetailJual extends Model
         'bonus_qty',
         'bonus_satuan',
         'bonus_hpp',
+        'jenis_pesanan',
     ];
 
     protected $casts = [
