@@ -276,58 +276,9 @@
                     </div>
                 </div>
 
-                {{-- Tipe Pesanan Global --}}
-                <div id="order-type-picker" class="shrink-0 border-b border-zinc-100 bg-white px-4 pt-3 pb-3 space-y-1.5">
-                    <p class="text-[10px] font-bold text-zinc-400 uppercase tracking-wide px-1">Tipe Pesanan</p>
-                    <div class="grid grid-cols-3 gap-1.5">
-                        <button type="button" data-tipe-pesan="dine_in" title="Makan di tempat"
-                            class="flex flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 transition-colors cursor-pointer select-none bg-zinc-900 text-white border-zinc-900 shadow-xs">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
-                            </svg>
-                            <span class="text-[11px] font-bold leading-none">Dine In</span>
-                        </button>
-                        <button type="button" data-tipe-pesan="take_away" title="Dibawa pulang"
-                            class="flex flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 transition-colors cursor-pointer select-none bg-zinc-50 text-zinc-600 border-zinc-200 hover:border-zinc-400 hover:text-zinc-900">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
-                            </svg>
-                            <span class="text-[11px] font-bold leading-none">Take Away</span>
-                        </button>
-                        <button type="button" data-tipe-pesan="delivery" title="Diantar ke alamat"
-                            class="flex flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 transition-colors cursor-pointer select-none bg-zinc-50 text-zinc-600 border-zinc-200 hover:border-zinc-400 hover:text-zinc-900">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
-                            </svg>
-                            <span class="text-[11px] font-bold leading-none">Delivery</span>
-                        </button>
-                    </div>
-                </div>
 
-                {{-- Detail Pengiriman (Aktif saat Delivery) --}}
-                <div id="delivery-info-box" class="hidden shrink-0 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2.5 space-y-2">
-                    <div class="flex items-center justify-between">
-                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-wide flex items-center gap-1">
-                            <svg class="w-3.5 h-3.5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
-                            </svg>
-                            Tujuan Delivery & Ongkir
-                        </span>
-                        <span class="text-[10px] font-medium text-zinc-400">Opsional</span>
-                    </div>
-                    <div>
-                        <textarea id="delivery-alamat" rows="2" placeholder="Ketik alamat pengiriman tujuan (kosongkan jika via Ojol)..."
-                            class="w-full text-xs bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-900 transition-colors resize-none placeholder:text-zinc-400"></textarea>
-                    </div>
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="text-xs font-semibold text-zinc-600">Biaya Kirim</span>
-                        <div class="flex items-center gap-1">
-                            <span class="text-xs text-zinc-400">Rp</span>
-                            <input id="delivery-ongkir" type="text" inputmode="numeric" placeholder="0"
-                                class="w-24 text-right text-xs font-bold bg-white border border-zinc-200 rounded-lg px-2 py-1 tabular-nums focus:outline-none focus:border-zinc-900 transition-colors">
-                        </div>
-                    </div>
-                </div>
+
+
 
                 {{-- Saklar Toggle Kemasan (Aktif saat Take Away atau Delivery) --}}
                 <div id="packaging-picker" class="hidden shrink-0 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2.5 space-y-1.5">

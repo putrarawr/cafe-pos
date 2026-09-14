@@ -85,3 +85,4 @@ class PromoBonusSeeder extends Seeder
         }
     }
 }
+ 

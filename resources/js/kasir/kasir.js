@@ -1663,7 +1663,7 @@ function renderCart() {
         const productGroups = getCartProductGroups();
         const cardsHtml = productGroups.map((grp) => buildProductCard(grp)).join('');
 
-        const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery') || state.jenisPesanan === 'delivery';
+        const hasDelivery = state.cart.some((i) => (i.jenis_pesanan === 'delivery' || i.jenis_pesanan === 'take_away') && i.jumlah > 0);
         const deliveryFields = hasDelivery
             ? `<div class="rounded-2xl border border-zinc-200 bg-zinc-50 p-3.5 space-y-2.5 mt-3">
                 <div>
@@ -1717,7 +1717,7 @@ function renderCart() {
         if (potonganBarang > 0) lblPotonganBarang.textContent = `- ${rupiah(potonganBarang)}`;
     }
 
-    const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery') || state.jenisPesanan === 'delivery';
+    const hasDelivery = state.cart.some((i) => (i.jenis_pesanan === 'delivery' || i.jenis_pesanan === 'take_away') && i.jumlah > 0);
     const rowBiayaKirim = document.getElementById('row-biaya-kirim');
     const lblBiayaKirim = document.getElementById('lbl-biaya-kirim');
     if (rowBiayaKirim) rowBiayaKirim.classList.toggle('hidden', !hasDelivery || !state.biayaKirim);
@@ -1820,9 +1820,9 @@ function renderGudangStokInfo() {
 }
 
 function sinkronkanKemasanPerItem() {
-    const isTakeAwayOrDelivery = state.jenisPesanan === 'take_away' || state.jenisPesanan === 'delivery';
+    const hasTakeAwayOrDelivery = state.cart.some((i) => (i.jenis_pesanan === 'take_away' || i.jenis_pesanan === 'delivery') && i.jumlah > 0);
 
-    if (!isTakeAwayOrDelivery || !state.pakaiKemasan) {
+    if (!hasTakeAwayOrDelivery || !state.pakaiKemasan) {
         state.cart = state.cart.filter((i) => !i.is_kemasan);
         return;
     }
@@ -1832,6 +1832,7 @@ function sinkronkanKemasanPerItem() {
 
     state.cart.forEach((item) => {
         if (item.is_kemasan || item.is_bonus) return;
+        if (item.jenis_pesanan !== 'take_away' && item.jenis_pesanan !== 'delivery') return;
 
         const barang = state.barang.find((b) => Number(b.id) === Number(item.barang_id));
         if (!barang || !barang.kemasan_id) return;
@@ -1866,18 +1867,17 @@ function sinkronkanKemasanPerItem() {
             existing.harga = Number(req.kemasan.harga_jual || 0);
             existing.harga_asli = Number(req.kemasan.harga_jual || 0);
             existing.satuan = req.kemasan.satuan || 'Pcs';
-            existing.jenis_pesanan = state.jenisPesanan;
         } else {
             state.cart.push({
                 barang_id: req.kemasan.id,
                 nama_barang: req.kemasan.nama_barang,
-                key: `kemasan:${req.kemasan.id}:${state.jenisPesanan}`,
+                key: `kemasan:${req.kemasan.id}`,
                 satuan: req.kemasan.satuan || 'Pcs',
                 harga: Number(req.kemasan.harga_jual || 0),
                 harga_asli: Number(req.kemasan.harga_jual || 0),
                 jumlah: req.totalQty,
                 diskon: 0,
-                jenis_pesanan: state.jenisPesanan,
+                jenis_pesanan: 'take_away',
                 is_kemasan: true,
             });
         }
@@ -1893,9 +1893,9 @@ function renderPackagingToggle() {
     const picker = document.getElementById('packaging-picker');
     if (!picker) return;
 
-    const isTakeAwayOrDelivery = state.jenisPesanan === 'take_away' || state.jenisPesanan === 'delivery';
-    picker.classList.toggle('hidden', !isTakeAwayOrDelivery);
-    if (!isTakeAwayOrDelivery) return;
+    const hasTakeAwayOrDelivery = state.cart.some((i) => (i.jenis_pesanan === 'take_away' || i.jenis_pesanan === 'delivery') && i.jumlah > 0);
+    picker.classList.toggle('hidden', !hasTakeAwayOrDelivery);
+    if (!hasTakeAwayOrDelivery) return;
 
     const btnPakai = document.getElementById('btn-kemasan-pakai');
     const btnTanpa = document.getElementById('btn-kemasan-tanpa');
@@ -1931,10 +1931,10 @@ function renderDeliveryInfoBox() {
     const box = document.getElementById('delivery-info-box');
     if (!box) return;
 
-    const isDelivery = state.jenisPesanan === 'delivery';
-    box.classList.toggle('hidden', !isDelivery);
+    const hasDelivery = state.cart.some((i) => (i.jenis_pesanan === 'delivery' || i.jenis_pesanan === 'take_away') && i.jumlah > 0);
+    box.classList.toggle('hidden', !hasDelivery);
 
-    if (isDelivery) {
+    if (hasDelivery) {
         const alamatEl = document.getElementById('delivery-alamat');
         const ongkirEl = document.getElementById('delivery-ongkir');
         if (alamatEl && document.activeElement !== alamatEl) {
