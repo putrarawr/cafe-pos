@@ -114,7 +114,7 @@ function stokBarang(barang) {
 
 function stokTersedia(barang) {
     const dasar = stokBarang(barang);
-    const lines = state.cart.filter((i) => i.barang_id === barang.id);
+    const lines = state.cart.filter((i) => Number(i.barang_id) === Number(barang.id));
     if (!lines.length) return dasar;
     const units = getUnitsForBarang(barang);
     const dipakai = lines.reduce((sum, item) => {
@@ -141,9 +141,11 @@ function getCartProductGroups() {
     const groupMap = new Map();
 
     state.cart.forEach((item) => {
-        const bId = item.barang_id;
+        if (item.is_kemasan || item.is_bonus) return;
+
+        const bId = Number(item.barang_id);
         if (!groupMap.has(bId)) {
-            const barang = state.barang.find((b) => Number(b.id) === Number(bId)) || { id: bId, nama_barang: item.nama_barang, harga_jual: item.harga };
+            const barang = state.barang.find((b) => Number(b.id) === bId) || { id: bId, nama_barang: item.nama_barang, harga_jual: item.harga };
             groupMap.set(bId, {
                 barang_id: bId,
                 nama_barang: item.nama_barang,
@@ -151,9 +153,9 @@ function getCartProductGroups() {
                 harga_asli: item.harga_asli ?? item.harga,
                 satuan: item.satuan,
                 barang: barang,
-                dine_in: null,
-                take_away: null,
-                delivery: null,
+                dine_in_qty: 0,
+                take_away_qty: 0,
+                delivery_qty: 0,
                 totalQty: 0,
                 totalDiskon: 0,
             });
@@ -161,7 +163,10 @@ function getCartProductGroups() {
 
         const grp = groupMap.get(bId);
         const tipe = item.jenis_pesanan || 'dine_in';
-        grp[tipe] = item;
+        if (tipe === 'dine_in') grp.dine_in_qty += item.jumlah;
+        else if (tipe === 'take_away') grp.take_away_qty += item.jumlah;
+        else if (tipe === 'delivery') grp.delivery_qty += item.jumlah;
+
         grp.totalQty += item.jumlah;
         grp.totalDiskon += (item.diskon || 0) * item.jumlah;
     });
@@ -170,7 +175,8 @@ function getCartProductGroups() {
 }
 
 function tambahQtyOrderType(barangId, jenis = 'dine_in') {
-    const barang = state.barang.find((b) => Number(b.id) === Number(barangId));
+    const bId = Number(barangId);
+    const barang = state.barang.find((b) => Number(b.id) === bId);
     if (!barang) return;
 
     if (barang.status === 'habis') {
@@ -180,10 +186,10 @@ function tambahQtyOrderType(barangId, jenis = 'dine_in') {
 
     const units = getUnitsForBarang(barang);
     const existing = state.cart.find(
-        (i) => Number(i.barang_id) === Number(barangId) && i.jenis_pesanan === jenis && !i.is_bonus
+        (i) => Number(i.barang_id) === bId && (i.jenis_pesanan || 'dine_in') === jenis && !i.is_bonus && !i.is_kemasan
     );
 
-    const anyExisting = state.cart.find((i) => Number(i.barang_id) === Number(barangId) && !i.is_bonus);
+    const anyExisting = state.cart.find((i) => Number(i.barang_id) === bId && !i.is_bonus && !i.is_kemasan);
     const satuanDefault = anyExisting ? anyExisting.satuan : units[0].satuan;
     const unitObj = units.find((u) => u.satuan === satuanDefault) ?? units[0];
     const faktor = unitObj ? unitObj.faktor : 1;
@@ -192,7 +198,7 @@ function tambahQtyOrderType(barangId, jenis = 'dine_in') {
     const tersedia = stokTersedia(barang);
 
     if (faktor > tersedia) {
-        toast(`Stok ${barang.nama_barang} tidak cukup`, true);
+        toast(`Stok ${barang.nama_barang} tidak cukup (tersisa ${tersedia} ${satuanDefault})`, true);
         return;
     }
 
@@ -215,8 +221,9 @@ function tambahQtyOrderType(barangId, jenis = 'dine_in') {
 }
 
 function kurangQtyOrderType(barangId, jenis) {
+    const bId = Number(barangId);
     const existing = state.cart.find(
-        (i) => Number(i.barang_id) === Number(barangId) && i.jenis_pesanan === jenis && !i.is_bonus
+        (i) => Number(i.barang_id) === bId && (i.jenis_pesanan || 'dine_in') === jenis && !i.is_bonus && !i.is_kemasan
     );
     if (!existing) return;
 
@@ -233,7 +240,7 @@ function kurangQtyOrderType(barangId, jenis) {
 const cartKey = (barangId, jenis) => `${barangId}:${jenis || 'dine_in'}`;
 
 function findCartLineKey(barangId) {
-    const lines = state.cart.filter((i) => i.barang_id === barangId && !i.is_bonus);
+    const lines = state.cart.filter((i) => Number(i.barang_id) === Number(barangId) && !i.is_bonus);
     if (!lines.length) return null;
     const samaTipe = lines.find((i) => i.jenis_pesanan === state.jenisPesanan);
     return samaTipe?.key ?? lines[0].key;
@@ -247,7 +254,7 @@ function ubahSatuanItem(key, satuanBaru) {
     const item = state.cart.find((i) => i.key === key);
     if (!item) return;
 
-    const barang = state.barang.find((b) => b.id === item.barang_id);
+    const barang = state.barang.find((b) => Number(b.id) === Number(item.barang_id));
     if (!barang) return;
 
     const units = getUnitsForBarang(barang);
@@ -272,7 +279,7 @@ function ubahJumlah(key, delta) {
     const item = state.cart.find((i) => i.key === key);
     if (!item) return;
 
-    const barang = state.barang.find((b) => b.id === item.barang_id);
+    const barang = state.barang.find((b) => Number(b.id) === Number(item.barang_id));
     const units = barang ? getUnitsForBarang(barang) : [];
     const unitObj = units.find((u) => u.satuan === item.satuan);
     const faktor = unitObj ? unitObj.faktor : 1;
@@ -1284,7 +1291,7 @@ function renderProduk() {
             const kelasRing = sorot || (sorotCart ? 'ring-2 ring-zinc-900' : '');
             const units = getUnitsForBarang(b);
             const defaultUnit = units[0]?.satuan ?? b.satuan ?? 'Pcs';
-            const jumlahDiKeranjang = state.cart.filter((i) => i.barang_id === b.id).reduce((s, i) => s + i.jumlah, 0);
+            const jumlahDiKeranjang = state.cart.filter((i) => Number(i.barang_id) === Number(b.id)).reduce((s, i) => s + i.jumlah, 0);
             const diKeranjang = jumlahDiKeranjang > 0;
 
             const hasTier = (b.min_qty_2 && Number(b.nilai_tier_2) > 0) || (b.min_qty_3 && Number(b.nilai_tier_3) > 0) || (b.min_qty_1 && Number(b.nilai_tier_1) > 0);
@@ -1546,11 +1553,11 @@ function getProductIconHtml(barang) {
 }
 
 function buildProductCard(grp) {
-    const { barang_id, nama_barang, harga, satuan, barang, dine_in, take_away, delivery, totalQty } = grp;
+    const { barang_id, nama_barang, harga, satuan, barang, totalQty, dine_in_qty, take_away_qty, delivery_qty } = grp;
 
-    const qtyDineIn = dine_in ? dine_in.jumlah : 0;
-    const qtyTakeAway = take_away ? take_away.jumlah : 0;
-    const qtyDelivery = delivery ? delivery.jumlah : 0;
+    const qtyDineIn = dine_in_qty || 0;
+    const qtyTakeAway = take_away_qty || 0;
+    const qtyDelivery = delivery_qty || 0;
 
     const iconHtml = getProductIconHtml(barang);
 
