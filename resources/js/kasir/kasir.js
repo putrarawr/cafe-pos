@@ -135,24 +135,97 @@ function gudangStokTersedia(barang) {
 }
 
 /**
- * Group cart items by jenis_pesanan
- * Returns object: { dine_in: [], take_away: [], delivery: [] }
+ * Group cart items by barang_id for product-centric cart cards
  */
-function getOrderGroups() {
-    const groups = {
-        dine_in: [],
-        take_away: [],
-        delivery: [],
-    };
+function getCartProductGroups() {
+    const groupMap = new Map();
+
     state.cart.forEach((item) => {
-        const tipe = item.jenis_pesanan || 'dine_in';
-        if (groups[tipe]) {
-            groups[tipe].push(item);
-        } else {
-            groups.dine_in.push(item);
+        const bId = item.barang_id;
+        if (!groupMap.has(bId)) {
+            const barang = state.barang.find((b) => Number(b.id) === Number(bId)) || { id: bId, nama_barang: item.nama_barang, harga_jual: item.harga };
+            groupMap.set(bId, {
+                barang_id: bId,
+                nama_barang: item.nama_barang,
+                harga: item.harga,
+                harga_asli: item.harga_asli ?? item.harga,
+                satuan: item.satuan,
+                barang: barang,
+                dine_in: null,
+                take_away: null,
+                delivery: null,
+                totalQty: 0,
+                totalDiskon: 0,
+            });
         }
+
+        const grp = groupMap.get(bId);
+        const tipe = item.jenis_pesanan || 'dine_in';
+        grp[tipe] = item;
+        grp.totalQty += item.jumlah;
+        grp.totalDiskon += (item.diskon || 0) * item.jumlah;
     });
-    return groups;
+
+    return Array.from(groupMap.values());
+}
+
+function tambahQtyOrderType(barangId, jenis = 'dine_in') {
+    const barang = state.barang.find((b) => Number(b.id) === Number(barangId));
+    if (!barang) return;
+
+    if (barang.status === 'habis') {
+        toast(`Menu ${barang.nama_barang} sedang tidak tersedia (habis)`, true);
+        return;
+    }
+
+    const units = getUnitsForBarang(barang);
+    const existing = state.cart.find(
+        (i) => Number(i.barang_id) === Number(barangId) && i.jenis_pesanan === jenis && !i.is_bonus
+    );
+
+    const anyExisting = state.cart.find((i) => Number(i.barang_id) === Number(barangId) && !i.is_bonus);
+    const satuanDefault = anyExisting ? anyExisting.satuan : units[0].satuan;
+    const unitObj = units.find((u) => u.satuan === satuanDefault) ?? units[0];
+    const faktor = unitObj ? unitObj.faktor : 1;
+    const hargaUnit = unitObj ? unitObj.harga_jual : barang.harga_jual;
+
+    const tersedia = stokTersedia(barang);
+
+    if (faktor > tersedia) {
+        toast(`Stok ${barang.nama_barang} tidak cukup`, true);
+        return;
+    }
+
+    if (existing) {
+        existing.jumlah += 1;
+    } else {
+        state.cart.push({
+            barang_id: barang.id,
+            nama_barang: barang.nama_barang,
+            key: cartKey(barang.id, jenis),
+            satuan: satuanDefault,
+            harga: hargaUnit,
+            harga_asli: hargaUnit,
+            jumlah: 1,
+            diskon: 0,
+            jenis_pesanan: jenis,
+        });
+    }
+    render();
+}
+
+function kurangQtyOrderType(barangId, jenis) {
+    const existing = state.cart.find(
+        (i) => Number(i.barang_id) === Number(barangId) && i.jenis_pesanan === jenis && !i.is_bonus
+    );
+    if (!existing) return;
+
+    if (existing.jumlah > 1) {
+        existing.jumlah -= 1;
+    } else {
+        state.cart = state.cart.filter((i) => i !== existing);
+    }
+    render();
 }
 
 // ------------------------- KERANJANG -------------------------
@@ -167,58 +240,7 @@ function findCartLineKey(barangId) {
 }
 
 function tambahKeCart(barangId) {
-    const barang = state.barang.find((b) => b.id === barangId);
-    if (!barang) return;
-
-    if (barang.status === 'habis') {
-        toast(`Menu ${barang.nama_barang} sedang tidak tersedia (habis)`, true);
-        return;
-    }
-
-    const units = getUnitsForBarang(barang);
-    const existing = state.cart.find(
-        (i) => i.barang_id === barangId && i.jenis_pesanan === state.jenisPesanan && !i.is_bonus
-    );
-    const satuanDefault = existing ? existing.satuan : units[0].satuan;
-    const unitObj = units.find((u) => u.satuan === satuanDefault) ?? units[0];
-    const faktor = unitObj ? unitObj.faktor : 1;
-    const hargaUnit = unitObj ? unitObj.harga_jual : barang.harga_jual;
-
-    const tersedia = stokTersedia(barang);
-
-    if (faktor > tersedia) {
-        const stokDasar = stokBarang(barang);
-        const rekomendasi = gudangStokTersedia(barang).filter((n) => n !== namaGudangSekarang());
-        if (tersedia <= 0 && stokDasar > 0) {
-            toast(`Semua stok ${barang.nama_barang} (${stokDasar} ${barang.satuan ?? ''}) sudah ada di keranjang`, true);
-        } else if (stokDasar === 0) {
-            if (rekomendasi.length > 0) {
-                toast(`Stok ${barang.nama_barang} habis di ${namaGudangSekarang()}. Tersedia di: ${rekomendasi.join(', ')}`, true);
-            } else {
-                toast(`Stok ${barang.nama_barang} habis di semua gudang`, true);
-            }
-        } else {
-            toast(`Stok ${barang.nama_barang} di ${namaGudangSekarang()} tinggal ${tersedia} ${barang.satuan ?? ''}`, true);
-        }
-        return;
-    }
-
-    if (existing) {
-        existing.jumlah += 1;
-    } else {
-        state.cart.push({
-            barang_id: barang.id,
-            nama_barang: barang.nama_barang,
-            key: cartKey(barang.id, state.jenisPesanan),
-            satuan: satuanDefault,
-            harga: hargaUnit,
-            harga_asli: hargaUnit,
-            jumlah: 1,
-            diskon: 0,
-            jenis_pesanan: state.jenisPesanan,
-        });
-    }
-    render();
+    tambahQtyOrderType(barangId, state.jenisPesanan || 'dine_in');
 }
 
 function ubahSatuanItem(key, satuanBaru) {
@@ -1499,150 +1521,116 @@ function updateCartTierPrices() {
     applyPromoBonusRules();
 }
 
-function buildCartCard(i, idx) {
-    if (i.is_bonus) {
-        return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/80 rounded-xl p-2.5 shadow-2xs space-y-1.5 transition-colors duration-150">
-            <div class="flex items-center gap-2.5">
-                <div class="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-zinc-100/90 border border-zinc-200 flex items-center justify-center text-[13px] font-black select-none text-zinc-700 shadow-2xs">
-                    BNS
-                </div>
-                <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
-                        <span class="text-[10px] font-bold text-zinc-900 bg-zinc-200 border border-zinc-300 px-1.5 py-0.5 rounded-md shrink-0">[BONUS]</span>
-                        <p class="text-[13px] font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
-                        ${tipeBadgeHtml(i.jenis_pesanan)}
-                    </div>
-                    <div class="flex items-center gap-1.5 mt-0.5">
-                        <span class="text-[13px] font-bold text-emerald-500 tabular-nums">Rp 0</span>
-                        <span class="text-xs font-medium text-zinc-400 tabular-nums">x${i.jumlah} (GRATIS)</span>
-                    </div>
-                </div>
-            </div>
+function getProductIconHtml(barang) {
+    const fotoUrl = barang?.foto || barang?.gambar || null;
+    if (fotoUrl) {
+        return `<img src="${fotoUrl}" alt="${escapeHtml(barang.nama_barang)}" class="w-full h-full object-contain drop-shadow-2xs rounded-lg" onerror="this.onerror=null; this.parentElement.innerHTML='${inisial(barang.nama_barang)}';">`;
+    }
+
+    const nama = (barang?.nama_barang || '').toLowerCase();
+    const isDrink = /es|sirup|kopi|tea|teh|jus|juice|minuman|air|boba|coffee|latte|drink|susu|milk|coffe/.test(nama);
+
+    if (isDrink) {
+        return `<div class="w-full h-full rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center p-2">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8 2h8v2H8z"/><path d="M9 4v3a2 2 0 0 1-2 2H6v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9h-1a2 2 0 0 1-2-2V4"/><path d="M12 11v6"/>
+            </svg>
         </div>`;
     }
 
-    const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id))
-        || state.barangKemasan.find((b) => Number(b.id) === Number(i.barang_id));
-    const units = barang ? getUnitsForBarang(barang) : [{ satuan: i.satuan, harga_jual: i.harga }];
-    const selectedUnitObj = units.find((u) => u.satuan === i.satuan) ?? units[0];
-
-    const customUnitOptionsHtml = units
-        .map((u) => {
-            const active = u.satuan === i.satuan;
-            const checkIcon = `<svg class="w-3.5 h-3.5 shrink-0 text-white" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>`;
-            return `<button type="button" data-custom-unit-select="${i.key}" data-unit-val="${u.satuan}"
-                class="w-full flex items-center justify-between gap-2 text-left text-xs rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${active
-                    ? 'bg-zinc-900 text-white font-bold shadow-xs'
-                    : 'text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 font-semibold'
-                }">
-                <span class="truncate">${u.satuan} <span class="${active ? 'text-zinc-300 font-normal' : 'text-zinc-500 font-normal'}">(${rupiah(u.harga_jual)})</span></span>
-                ${active ? checkIcon : ''}
-            </button>`;
-        })
-        .join('');
-
-    const currentHarga = i.harga ?? selectedUnitObj.harga_jual;
-    const fotoUrl = barang?.foto || barang?.gambar || null;
-    const thumbHtml = fotoUrl
-        ? `<img src="${fotoUrl}" alt="${escapeHtml(i.nama_barang)}" class="w-full h-full object-contain drop-shadow-2xs" onerror="this.onerror=null; this.parentElement.innerHTML='<span class=\\'text-sm font-black text-zinc-600\\'>${inisial(i.nama_barang)}</span>';">`
-        : `<span class="text-sm font-black text-zinc-600">${inisial(i.nama_barang)}</span>`;
-
-    return `<div data-cart-row="${idx}" tabindex="-1" class="relative bg-white border border-zinc-200/80 hover:border-zinc-300 rounded-xl p-2.5 shadow-2xs space-y-1.5 transition-all duration-150 ${cartIdx === idx ? 'ring-2 ring-black' : ''}">
-        <div class="flex items-center gap-2.5">
-            <!-- Foto Makanan / Produk Persegi Besar -->
-            <div class="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-zinc-100/80 border border-zinc-200/70 p-1 flex items-center justify-center select-none shadow-2xs">
-                ${thumbHtml}
-            </div>
-
-            <!-- Info & Kontrol -->
-            <div class="min-w-0 flex-1">
-                <!-- Judul Item -->
-                <div class="flex items-center justify-between gap-2">
-                    <div class="flex items-center gap-1.5 min-w-0">
-                        ${i.is_kemasan ? '<span class="text-[10px] font-bold text-zinc-900 bg-zinc-200 border border-zinc-300 px-1.5 py-0.5 rounded-md shrink-0">[KEMASAN]</span>' : ''}
-                        <p class="text-[13px] font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
-                    </div>
-                    ${tipeBadgeHtml(i.jenis_pesanan)}
-                </div>
-
-                <!-- Harga Hijau & Pengali / Satuan -->
-                <div class="flex items-center gap-1.5 mt-0.5">
-                    <span class="text-[13px] font-bold text-emerald-500 tabular-nums">${rupiah(currentHarga)}</span>
-                    <span class="text-xs font-medium text-zinc-400 tabular-nums">x${i.jumlah}</span>
-                    
-                    ${units.length > 1
-                        ? `<div class="relative ml-0.5" data-unit-dropdown-wrapper="${i.key}">
-                            <button type="button" data-unit-dropdown-btn="${i.key}"
-                                class="inline-flex items-center gap-0.5 text-[11px] font-semibold text-zinc-500 hover:text-zinc-800 bg-zinc-100 hover:bg-zinc-200/70 px-1.5 py-0.5 rounded transition-colors cursor-pointer group/unit">
-                                <span>${selectedUnitObj.satuan}</span>
-                                <svg data-unit-dropdown-chevron="${i.key}" class="w-2.5 h-2.5 text-zinc-400 group-hover/unit:text-zinc-700 transition-transform duration-200" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M4 6l4 4 4-4"/>
-                                </svg>
-                            </button>
-                            <div data-unit-dropdown-menu="${i.key}"
-                                class="hidden anim-scale-in absolute left-0 top-full mt-1.5 min-w-[185px] w-max max-w-[240px] max-h-52 overflow-y-auto z-40 bg-white border border-zinc-200 rounded-xl shadow-xl shadow-zinc-950/10 p-1 space-y-0.5">
-                                ${customUnitOptionsHtml}
-                            </div>
-                        </div>`
-                        : `<span class="text-[11px] text-zinc-400 font-normal">/ ${selectedUnitObj.satuan}</span>`
-                    }
-                </div>
-
-                <!-- Baris Tombol Kontrol: Minus - Qty - Plus (Hitam Kotak/Persegi) & Hapus (Tempat Sampah Kanan) -->
-                <div class="flex items-center justify-between gap-2 mt-1.5">
-                    <div class="flex items-center gap-2">
-                        <button data-minus="${i.key}" type="button" 
-                            class="w-5 h-5 rounded-md hover:bg-zinc-100 text-zinc-800 font-bold transition flex items-center justify-center cursor-pointer text-sm select-none leading-none" 
-                            title="Kurangi">−</button>
-                        <input data-qty="${i.key}" type="number" min="1" value="${i.jumlah}"
-                            class="w-5 text-center text-[11px] font-bold text-zinc-900 tabular-nums bg-transparent focus:outline-none focus:bg-zinc-100 rounded py-0.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                        <button data-plus="${i.key}" type="button" 
-                            class="w-5 h-5 rounded-md bg-black hover:bg-zinc-800 text-white font-bold transition flex items-center justify-center cursor-pointer text-xs shadow-xs select-none" 
-                            title="Tambah">
-                            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <line x1="12" y1="5" x2="12" y2="19"></line>
-                                <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                        </button>
-                    </div>
-
-                    <button data-del="${i.key}" type="button" class="text-zinc-400 hover:text-red-500 transition-colors p-1 cursor-pointer rounded-lg hover:bg-zinc-100" title="Hapus item">
-                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-        </div>
-        ${Number(i.diskon || 0) > 0
-            ? `<div class="flex items-center justify-between pt-1 border-t border-zinc-100 text-[11px]">
-                <span class="text-zinc-400 font-medium">Potongan barang</span>
-                <span class="text-zinc-700 font-semibold tabular-nums">−${rupiah(i.diskon * i.jumlah)} (${persenPotongan(i.diskon, (i.harga_asli ?? i.harga) * i.jumlah)}%)</span>
-            </div>`
-            : ''}
+    return `<div class="w-full h-full rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center p-2">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 21a9 9 0 0 0 9-9H3a9 9 0 0 0 9 9Z"/><path d="M7 8V3"/><path d="M12 8V3"/><path d="M17 8V3"/>
+        </svg>
     </div>`;
 }
 
-const TIPE_ICON_SVG = {
-    dine_in: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>',
-    take_away: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
-    delivery: '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
-};
+function buildProductCard(grp) {
+    const { barang_id, nama_barang, harga, satuan, barang, dine_in, take_away, delivery, totalQty } = grp;
 
-const TIPE_LABEL = { dine_in: 'Dine In', take_away: 'Take Away', delivery: 'Delivery' };
+    const qtyDineIn = dine_in ? dine_in.jumlah : 0;
+    const qtyTakeAway = take_away ? take_away.jumlah : 0;
+    const qtyDelivery = delivery ? delivery.jumlah : 0;
 
-const TIPE_BADGE = {
-    dine_in: { cls: 'bg-zinc-100 text-zinc-700 border-zinc-200', label: 'Dine In' },
-    take_away: { cls: 'bg-zinc-800 text-white border-zinc-900', label: 'Take Away' },
-    delivery: { cls: 'bg-zinc-200 text-zinc-900 border-zinc-300', label: 'Delivery' },
-};
+    const iconHtml = getProductIconHtml(barang);
 
-function tipeBadgeHtml(jenis) {
-    const tipe = TIPE_BADGE[jenis] ? jenis : 'dine_in';
-    const b = TIPE_BADGE[tipe] || TIPE_BADGE.dine_in;
-    return `<span class="inline-flex items-center gap-1 text-[10px] font-bold ${b.cls} border px-1.5 py-0.5 rounded-md shrink-0">
-                ${TIPE_ICON_SVG[tipe] || ''} ${b.label}
-            </span>`;
+    return `<div data-product-card="${barang_id}" class="bg-white border border-zinc-200/90 rounded-2xl p-3.5 space-y-3 shadow-xs hover:border-zinc-300 transition-all">
+        <!-- Header Item: Icon + Nama + Harga & Total -->
+        <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 shrink-0 select-none">
+                    ${iconHtml}
+                </div>
+                <div class="min-w-0">
+                    <h4 class="text-sm font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(nama_barang)}">${escapeHtml(nama_barang)}</h4>
+                    <p class="text-xs font-bold text-sky-600 tabular-nums">${rupiah(harga)} <span class="text-[11px] font-normal text-zinc-400">/ ${satuan || 'Pcs'}</span></p>
+                </div>
+            </div>
+            <div class="shrink-0 text-right">
+                <span class="text-xs font-medium text-zinc-400 tabular-nums">Total: ${totalQty}</span>
+            </div>
+        </div>
+
+        <!-- Sub-rows untuk Tipe Pesanan: Dine in, Take away, Delivery -->
+        <div class="space-y-2.5 pt-1.5 border-t border-zinc-100">
+            <!-- Dine in -->
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 text-zinc-700">
+                    <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
+                    </svg>
+                    <span class="text-xs font-medium text-zinc-700">Dine in</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" data-btn-minus-type="${barang_id}" data-type="dine_in"
+                        class="w-7 h-7 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 font-bold flex items-center justify-center cursor-pointer transition-colors text-sm select-none"
+                        title="Kurangi Dine In">−</button>
+                    <span class="w-6 text-center text-xs font-bold text-zinc-900 tabular-nums select-none">${qtyDineIn}</span>
+                    <button type="button" data-btn-plus-type="${barang_id}" data-type="dine_in"
+                        class="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold flex items-center justify-center cursor-pointer transition-colors text-sm shadow-xs select-none"
+                        title="Tambah Dine In">+</button>
+                </div>
+            </div>
+
+            <!-- Take away -->
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 text-zinc-700">
+                    <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+                    </svg>
+                    <span class="text-xs font-medium text-zinc-700">Take away</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" data-btn-minus-type="${barang_id}" data-type="take_away"
+                        class="w-7 h-7 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 font-bold flex items-center justify-center cursor-pointer transition-colors text-sm select-none"
+                        title="Kurangi Take Away">−</button>
+                    <span class="w-6 text-center text-xs font-bold text-zinc-900 tabular-nums select-none">${qtyTakeAway}</span>
+                    <button type="button" data-btn-plus-type="${barang_id}" data-type="take_away"
+                        class="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold flex items-center justify-center cursor-pointer transition-colors text-sm shadow-xs select-none"
+                        title="Tambah Take Away">+</button>
+                </div>
+            </div>
+
+            <!-- Delivery -->
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 text-zinc-700">
+                    <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
+                    </svg>
+                    <span class="text-xs font-medium text-zinc-700">Delivery</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" data-btn-minus-type="${barang_id}" data-type="delivery"
+                        class="w-7 h-7 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 font-bold flex items-center justify-center cursor-pointer transition-colors text-sm select-none"
+                        title="Kurangi Delivery">−</button>
+                    <span class="w-6 text-center text-xs font-bold text-zinc-900 tabular-nums select-none">${qtyDelivery}</span>
+                    <button type="button" data-btn-plus-type="${barang_id}" data-type="delivery"
+                        class="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold flex items-center justify-center cursor-pointer transition-colors text-sm shadow-xs select-none"
+                        title="Tambah Delivery">+</button>
+                </div>
+            </div>
+        </div>
+    </div>`;
 }
 
 function renderCart() {
@@ -1672,55 +1660,24 @@ function renderCart() {
             <p class="text-xs text-zinc-400 mt-0.5">Pilih produk di sebelah kiri untuk menambahkan</p>
         </div>`;
     } else {
-        const tipeOrder = [
-            { key: 'dine_in', label: 'Dine In', icon: TIPE_ICON_SVG.dine_in },
-            { key: 'take_away', label: 'Take Away', icon: TIPE_ICON_SVG.take_away },
-            { key: 'delivery', label: 'Delivery', icon: TIPE_ICON_SVG.delivery },
-        ];
-        const groups = getOrderGroups();
-        const parts = [];
+        const productGroups = getCartProductGroups();
+        const cardsHtml = productGroups.map((grp) => buildProductCard(grp)).join('');
 
-        tipeOrder.forEach(({ key, label, icon }) => {
-            const items = groups[key];
-            if (!items?.length) return;
-
-            const collapsed = collapsedOrderGroups.has(key);
-            const subTotalGrup = items.reduce((s, i) => s + subtotalItem(i), 0);
-
-            const itemsHtml = items
-                .map((i) => buildCartCard(i, state.cart.indexOf(i)))
-                .join('');
-
-            const deliveryFields = key === 'delivery'
-                ? `<div class="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-2.5">
-                    <div>
-                        <label for="input-alamat-pengiriman" class="block text-xs font-bold text-zinc-600 mb-1">Alamat Pengiriman <span class="text-zinc-400 font-normal">(Opsional / Kosongkan jika via Ojol)</span></label>
-                        <textarea id="input-alamat-pengiriman" rows="2" placeholder="Kosongkan jika dijemput kurir ojek online atau ketik alamat tujuan" class="w-full text-xs rounded-xl border border-zinc-200 bg-white px-3 py-2 focus:outline-none focus:border-zinc-900 transition-colors resize-none">${escapeHtml(state.alamatPengiriman)}</textarea>
-                    </div>
-                    <div>
-                        <label for="input-biaya-kirim" class="block text-xs font-bold text-zinc-600 mb-1">Biaya Kirim <span class="text-zinc-400 font-normal">(Opsional)</span></label>
-                        <input id="input-biaya-kirim" type="text" inputmode="numeric" placeholder="0" value="${state.biayaKirim ? state.biayaKirim.toLocaleString('id-ID') : ''}" class="w-full text-right text-sm font-semibold tabular-nums rounded-xl border border-zinc-200 bg-white px-3 py-2 focus:outline-none focus:border-zinc-900 transition-colors">
-                    </div>
-                </div>`
-                : '';
-
-            parts.push(`<div class="space-y-2">
-                <button type="button" data-toggle-order-group="${key}" title="${collapsed ? 'Buka grup' : 'Tutup grup'}"
-                    class="w-full flex items-center justify-between gap-2 rounded-lg px-1 py-1 cursor-pointer select-none group/og">
-                    <span class="flex items-center gap-1.5 min-w-0">
-                        <svg class="w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${collapsed ? '' : 'rotate-90'}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg>
-                        <span class="text-xs font-bold text-zinc-800 uppercase tracking-wide truncate">${icon} ${label}</span>
-                        <span class="text-[10px] font-semibold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-full px-1.5 py-0.5 tabular-nums">${items.length} item</span>
-                    </span>
-                    <span class="text-[11px] font-bold text-zinc-400 tabular-nums">${rupiah(subTotalGrup)}</span>
-                </button>
-                <div data-order-items="${key}" class="space-y-2 ${collapsed ? 'hidden' : ''}">
-                    ${itemsHtml}
+        const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery') || state.jenisPesanan === 'delivery';
+        const deliveryFields = hasDelivery
+            ? `<div class="rounded-2xl border border-zinc-200 bg-zinc-50 p-3.5 space-y-2.5 mt-3">
+                <div>
+                    <label for="input-alamat-pengiriman" class="block text-xs font-bold text-zinc-700 mb-1">Alamat Pengiriman <span class="text-zinc-400 font-normal">(Opsional / Kosongkan jika via Ojol)</span></label>
+                    <textarea id="input-alamat-pengiriman" rows="2" placeholder="Kosongkan jika dijemput kurir ojek online atau ketik alamat tujuan" class="w-full text-xs rounded-xl border border-zinc-200 bg-white text-zinc-900 px-3 py-2 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-900 transition-colors resize-none">${escapeHtml(state.alamatPengiriman)}</textarea>
                 </div>
-            </div>`);
-        });
+                <div>
+                    <label for="input-biaya-kirim" class="block text-xs font-bold text-zinc-700 mb-1">Biaya Kirim</label>
+                    <input id="input-biaya-kirim" type="text" inputmode="numeric" placeholder="0" value="${state.biayaKirim ? state.biayaKirim.toLocaleString('id-ID') : ''}" class="w-full text-right text-sm font-semibold tabular-nums rounded-xl border border-zinc-200 bg-white text-zinc-900 px-3 py-2 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-900 transition-colors">
+                </div>
+            </div>`
+            : '';
 
-        wrap.innerHTML = parts.join('');
+        wrap.innerHTML = cardsHtml + deliveryFields;
     }
 
     const badge = document.getElementById('badge-cart-count');
@@ -2670,6 +2627,23 @@ async function init() {
                     cartIdx = idx;
                     render();
                 }
+            }
+
+            const plusType = e.target.closest('[data-btn-plus-type]');
+            const minusType = e.target.closest('[data-btn-minus-type]');
+
+            if (plusType) {
+                const bId = Number(plusType.dataset.btnPlusType);
+                const jenis = plusType.dataset.type;
+                tambahQtyOrderType(bId, jenis);
+                return;
+            }
+
+            if (minusType) {
+                const bId = Number(minusType.dataset.btnMinusType);
+                const jenis = minusType.dataset.type;
+                kurangQtyOrderType(bId, jenis);
+                return;
             }
 
             const plus = e.target.closest('[data-plus]');
