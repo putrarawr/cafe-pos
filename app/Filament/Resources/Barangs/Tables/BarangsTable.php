@@ -39,6 +39,7 @@ class BarangsTable
                         'setengah_jadi' => 'Setengah Jadi',
                         'barang_jadi' => 'Barang Jadi',
                         'barang_dagang' => 'Barang Dagang',
+                        'kemasan' => 'Kemasan',
                         'barang_pembantu' => 'Barang Pembantu',
                         default => ucwords(str_replace('_', ' ', $state ?? '-')),
                     })
@@ -46,6 +47,7 @@ class BarangsTable
                     ->color(fn ($state) => match ($state) {
                         'barang_jadi' => 'success',
                         'barang_dagang' => 'info',
+                        'kemasan' => 'warning',
                         'setengah_jadi' => 'warning',
                         'bahan_baku' => 'gray',
                         'barang_pembantu' => 'gray',
@@ -78,6 +80,12 @@ class BarangsTable
                     ->label('Dijual')
                     ->boolean()
                     ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('kemasan.nama_barang')
+                    ->label('Kemasan Default')
+                    ->placeholder('-')
+                    ->badge()
+                    ->color('gray')
+                    ->toggleable(),
                 IconColumn::make('butuh_proses')
                     ->label('Proses')
                     ->boolean()
@@ -139,11 +147,12 @@ class BarangsTable
                 SelectFilter::make('tipe_barang')
                     ->label('Tipe Barang')
                     ->options([
-                        'bahan_baku' => 'Bahan Baku',
-                        'setengah_jadi' => 'Setengah Jadi',
                         'barang_jadi' => 'Barang Jadi',
                         'barang_dagang' => 'Barang Dagang',
+                        'kemasan' => 'Kemasan',
                         'barang_pembantu' => 'Barang Pembantu',
+                        'bahan_baku' => 'Bahan Baku',
+                        'setengah_jadi' => 'Setengah Jadi',
                     ]),
                 SelectFilter::make('status')
                     ->label('Ketersediaan')

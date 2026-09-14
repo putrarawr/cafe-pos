@@ -20,6 +20,7 @@ class Barang extends Model
         'status' => 'tersedia',
         'bisa_dijual' => true,
         'butuh_proses' => false,
+        'is_default_kemasan' => false,
     ];
 
     public function getActivitylogOptions(): LogOptions
@@ -27,6 +28,7 @@ class Barang extends Model
         return LogOptions::defaults()
             ->logOnly([
                 'jenis_barang_id',
+                'kemasan_id',
                 'nomer_seri',
                 'barcode',
                 'nama_barang',
@@ -47,6 +49,7 @@ class Barang extends Model
         return [
             'butuh_proses' => 'boolean',
             'bisa_dijual' => 'boolean',
+            'is_default_kemasan' => 'boolean',
         ];
     }
 
@@ -68,8 +71,23 @@ class Barang extends Model
         return $query->where('bisa_dijual', true);
     }
 
+    public function scopeKemasanDefault($query)
+    {
+        return $query->whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])
+            ->where('is_default_kemasan', true)
+            ->where('status', 'tersedia');
+    }
+
     protected static function booted(): void
     {
+        static::saving(function (Barang $barang) {
+            if ($barang->is_default_kemasan) {
+                static::where('id', '!=', $barang->id ?? 0)
+                    ->where('is_default_kemasan', true)
+                    ->update(['is_default_kemasan' => false]);
+            }
+        });
+
         static::creating(function (Barang $barang) {
             if (empty($barang->nomer_seri) && !empty($barang->jenis_barang_id)) {
                 $jenis = JenisBarang::find($barang->jenis_barang_id);
@@ -349,5 +367,15 @@ class Barang extends Model
     public function historiHpps(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(HistoriHpp::class, 'barang_id')->orderBy('tanggal', 'desc');
+    }
+
+    public function kemasan(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Barang::class, 'kemasan_id');
+    }
+
+    public function barangPenggunaKemasan(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Barang::class, 'kemasan_id');
     }
 }

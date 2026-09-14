@@ -103,9 +103,9 @@ class KasirController extends Controller
                 'barang' => Barang::bisaDijual()
                     ->where(function ($q) {
                         $q->whereNull('tipe_barang')
-                            ->orWhere('tipe_barang', '!=', 'barang_pembantu');
+                            ->orWhereNotIn('tipe_barang', ['kemasan', 'barang_pembantu']);
                     })
-                    ->with('gudangs')
+                    ->with(['gudangs', 'kemasan'])
                     ->get()
                     ->map(fn(Barang $b) => [
                         'id' => $b->id,
@@ -115,6 +115,13 @@ class KasirController extends Controller
                         'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
                         'status' => $b->status ?? 'tersedia',
                         'butuh_proses' => (bool) $b->butuh_proses,
+                        'kemasan_id' => $b->kemasan_id,
+                        'kemasan' => $b->kemasan ? [
+                            'id' => $b->kemasan->id,
+                            'nama_barang' => $b->kemasan->nama_barang,
+                            'harga_jual' => (int) $b->kemasan->harga_jual,
+                            'satuan' => $b->kemasan->satuan ?? 'Pcs',
+                        ] : null,
                         'nomer_seri' => $b->nomer_seri,
                         'barcode' => $b->barcode,
                         'harga_jual' => (int) $b->harga_jual,
@@ -131,7 +138,8 @@ class KasirController extends Controller
                         // stok per gudang dari pivot barang_gudang: { gudang_id: jumlah_dasar }
                         'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
                     ]),
-                'barangKemasan' => Barang::where('tipe_barang', 'barang_pembantu')
+                'kemasanDefault' => $this->getKemasanDefaultData(),
+                'barangKemasan' => Barang::whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])
                     ->where('status', 'tersedia')
                     ->with('gudangs')
                     ->get()
@@ -173,9 +181,9 @@ class KasirController extends Controller
             'barang' => Barang::bisaDijual()
                 ->where(function ($q) {
                     $q->whereNull('tipe_barang')
-                        ->orWhere('tipe_barang', '!=', 'barang_pembantu');
+                        ->orWhereNotIn('tipe_barang', ['kemasan', 'barang_pembantu']);
                 })
-                ->with('gudangs')
+                ->with(['gudangs', 'kemasan'])
                 ->get()
                 ->map(fn(Barang $b) => [
                     'id' => $b->id,
@@ -185,6 +193,13 @@ class KasirController extends Controller
                     'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
                     'status' => $b->status ?? 'tersedia',
                     'butuh_proses' => (bool) $b->butuh_proses,
+                    'kemasan_id' => $b->kemasan_id,
+                    'kemasan' => $b->kemasan ? [
+                        'id' => $b->kemasan->id,
+                        'nama_barang' => $b->kemasan->nama_barang,
+                        'harga_jual' => (int) $b->kemasan->harga_jual,
+                        'satuan' => $b->kemasan->satuan ?? 'Pcs',
+                    ] : null,
                     'nomer_seri' => $b->nomer_seri,
                     'barcode' => $b->barcode,
                     'harga_jual' => (int) $b->harga_jual,
@@ -200,7 +215,8 @@ class KasirController extends Controller
                     'units' => $b->getAvailableUnits(),
                     'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
                 ]),
-            'barangKemasan' => Barang::where('tipe_barang', 'barang_pembantu')
+            'kemasanDefault' => $this->getKemasanDefaultData(),
+            'barangKemasan' => Barang::whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])
                 ->where('status', 'tersedia')
                 ->with('gudangs')
                 ->get()
@@ -229,6 +245,32 @@ class KasirController extends Controller
             ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
             ->header('Pragma', 'no-cache')
             ->header('Expires', '0');
+    }
+
+    /**
+     * Ambil data barang kemasan default yang aktif untuk kasir.
+     */
+    private function getKemasanDefaultData(): ?array
+    {
+        $kemasan = Barang::kemasanDefault()->with('gudangs')->first();
+        if (!$kemasan) {
+            $kemasan = Barang::whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])
+                ->where('status', 'tersedia')
+                ->with('gudangs')
+                ->first();
+        }
+
+        if (!$kemasan) {
+            return null;
+        }
+
+        return [
+            'id' => $kemasan->id,
+            'nama_barang' => $kemasan->nama_barang,
+            'harga_jual' => (int) $kemasan->harga_jual,
+            'satuan' => $kemasan->satuan ?? 'Pcs',
+            'stok' => $kemasan->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+        ];
     }
 
     /**
@@ -332,6 +374,7 @@ class KasirController extends Controller
                 ? (int) round(($p->diskon / ((int) $p->diskon + (int) $p->neto)) * 100)
                 : 0,
             'neto' => (int) $p->neto,
+            'alamat_pengiriman' => $p->alamat_pengiriman ?? null,
             'biaya_kirim' => (int) $p->biaya_kirim,
             'jenis_pembayaran' => $p->jenis_pembayaran,
             'bayar' => (int) $p->bayar,
@@ -400,7 +443,7 @@ class KasirController extends Controller
                     'message' => "Menu '{$item->nama_barang}' sedang berstatus habis.",
                 ], 422);
             }
-            if (!$item->bisa_dijual && $item->tipe_barang !== 'barang_pembantu') {
+            if (!$item->bisa_dijual && !in_array($item->tipe_barang, ['kemasan', 'barang_pembantu'])) {
                 return response()->json([
                     'success' => false,
                     'message' => "Barang '{$item->nama_barang}' tidak dapat dijual di kasir.",

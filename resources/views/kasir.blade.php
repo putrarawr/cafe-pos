@@ -304,8 +304,33 @@
                     </div>
                 </div>
 
-                {{-- Pilihan Kemasan / Bungkus (Aktif saat Take Away atau Delivery) --}}
-                <div id="packaging-picker" class="hidden shrink-0 border-b border-zinc-100 bg-zinc-50/70 px-4 py-2.5 space-y-1.5">
+                {{-- Detail Pengiriman (Aktif saat Delivery) --}}
+                <div id="delivery-info-box" class="hidden shrink-0 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2.5 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-wide flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
+                            </svg>
+                            Tujuan Delivery & Ongkir
+                        </span>
+                        <span class="text-[10px] font-medium text-zinc-400">Opsional</span>
+                    </div>
+                    <div>
+                        <textarea id="delivery-alamat" rows="2" placeholder="Ketik alamat pengiriman tujuan (kosongkan jika via Ojol)..."
+                            class="w-full text-xs bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-900 transition-colors resize-none placeholder:text-zinc-400"></textarea>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-semibold text-zinc-600">Biaya Kirim</span>
+                        <div class="flex items-center gap-1">
+                            <span class="text-xs text-zinc-400">Rp</span>
+                            <input id="delivery-ongkir" type="text" inputmode="numeric" placeholder="0"
+                                class="w-24 text-right text-xs font-bold bg-white border border-zinc-200 rounded-lg px-2 py-1 tabular-nums focus:outline-none focus:border-zinc-900 transition-colors">
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Saklar Toggle Kemasan (Aktif saat Take Away atau Delivery) --}}
+                <div id="packaging-picker" class="hidden shrink-0 border-b border-zinc-100 bg-zinc-50/80 px-4 py-2.5 space-y-1.5">
                     <div class="flex items-center justify-between">
                         <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-wide flex items-center gap-1">
                             <svg class="w-3.5 h-3.5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -315,12 +340,18 @@
                             </svg>
                             Kemasan / Bungkus
                         </span>
-                        <span id="packaging-status-badge" class="text-[10px] font-medium text-zinc-500 bg-white border border-zinc-200 rounded px-1.5 py-0.5">Bawa Wadah Sendiri</span>
+                        <span id="packaging-info-text" class="text-[10px] font-semibold text-zinc-500 tabular-nums"></span>
                     </div>
-                    <div class="flex items-center gap-1.5">
-                        <select id="select-kemasan" class="flex-1 text-xs font-semibold bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-900 transition-colors">
-                            <option value="">Tanpa Kemasan / Bawa Wadah Sendiri (Gratis)</option>
-                        </select>
+                    <div class="grid grid-cols-2 gap-1.5 p-0.5 bg-zinc-200/70 rounded-lg">
+                        <button id="btn-kemasan-pakai" type="button"
+                            class="flex items-center justify-center gap-1 text-xs font-bold py-1.5 px-2 rounded-md transition-all cursor-pointer select-none bg-zinc-900 text-white shadow-xs">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>
+                            <span>Pakai Kemasan</span>
+                        </button>
+                        <button id="btn-kemasan-tanpa" type="button"
+                            class="flex items-center justify-center gap-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-all cursor-pointer select-none text-zinc-600 hover:text-zinc-900">
+                            <span>Bawa Wadah Sendiri</span>
+                        </button>
                     </div>
                 </div>
 

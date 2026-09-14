@@ -56,6 +56,7 @@ const mockData = {
         { id: 992, nama_barang: 'Hot Paper Cup + Lid 8oz', harga_jual: 1500, satuan: 'pcs', stok: { 1: 100, 2: 50 } },
         { id: 993, nama_barang: 'Lunch Box Kraft Makanan', harga_jual: 3000, satuan: 'pcs', stok: { 1: 100, 2: 50 } },
     ],
+    kemasanDefault: { id: 991, nama_barang: 'Cup Dingin + Tutup Seal 16oz', harga_jual: 1000, satuan: 'pcs', stok: { 1: 100, 2: 50 } },
 };
 
 let mockCounter = 1;
@@ -99,6 +100,13 @@ export async function getBarangKemasan() {
         return structuredClone(window.KASIR_DATA.barangKemasan);
     }
     return structuredClone(sumber().barangKemasan || []);
+}
+
+export async function getKemasanDefault() {
+    if (!USE_MOCK && window.KASIR_DATA && window.KASIR_DATA.kemasanDefault !== undefined) {
+        return structuredClone(window.KASIR_DATA.kemasanDefault);
+    }
+    return structuredClone(sumber().kemasanDefault || null);
 }
 
 export async function getJenisBarang() {

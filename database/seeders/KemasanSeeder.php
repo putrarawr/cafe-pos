@@ -35,7 +35,7 @@ class KemasanSeeder extends Seeder
                 'harga_beli' => 600,
                 'hpp' => 600,
                 'harga_jual' => 1000,
-                'tipe_barang' => 'barang_pembantu',
+                'tipe_barang' => 'kemasan',
                 'status' => 'tersedia',
                 'butuh_proses' => false,
                 'bisa_dijual' => false,
@@ -48,7 +48,7 @@ class KemasanSeeder extends Seeder
                 'harga_beli' => 800,
                 'hpp' => 800,
                 'harga_jual' => 1500,
-                'tipe_barang' => 'barang_pembantu',
+                'tipe_barang' => 'kemasan',
                 'status' => 'tersedia',
                 'butuh_proses' => false,
                 'bisa_dijual' => false,
@@ -61,7 +61,7 @@ class KemasanSeeder extends Seeder
                 'harga_beli' => 1500,
                 'hpp' => 1500,
                 'harga_jual' => 3000,
-                'tipe_barang' => 'barang_pembantu',
+                'tipe_barang' => 'kemasan',
                 'status' => 'tersedia',
                 'butuh_proses' => false,
                 'bisa_dijual' => false,
@@ -83,6 +83,29 @@ class KemasanSeeder extends Seeder
                     $g->id => ['stok' => 100],
                 ]);
             }
+        }
+
+        // 3. Pasangkan kemasan default pada menu cafe jika ada
+        $cupDingin = Barang::where('nama_barang', 'Cup Dingin + Tutup Seal 16oz')->first();
+        if ($cupDingin) {
+            Barang::where(function ($q) {
+                $q->where('nama_barang', 'ilike', '%kopi%')
+                    ->orWhere('nama_barang', 'ilike', '%latte%')
+                    ->orWhere('nama_barang', 'ilike', '%teh%');
+            })
+                ->where('tipe_barang', '!=', 'kemasan')
+                ->update(['kemasan_id' => $cupDingin->id]);
+        }
+
+        $lunchBox = Barang::where('nama_barang', 'Lunch Box Kraft Makanan')->first();
+        if ($lunchBox) {
+            Barang::where(function ($q) {
+                $q->where('nama_barang', 'ilike', '%nasi%')
+                    ->orWhere('nama_barang', 'ilike', '%goreng%')
+                    ->orWhere('nama_barang', 'ilike', '%mie%');
+            })
+                ->where('tipe_barang', '!=', 'kemasan')
+                ->update(['kemasan_id' => $lunchBox->id]);
         }
     }
 }

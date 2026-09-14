@@ -8,6 +8,7 @@
 import {
     getBarang,
     getBarangKemasan,
+    getKemasanDefault,
     getJenisBarang,
     getGudang,
     getRiwayat,
@@ -21,7 +22,8 @@ import {
 const state = {
     barang: [],
     barangKemasan: [],
-    selectedKemasanId: null,
+    kemasanDefault: null,
+    pakaiKemasan: true,
     jenisBarang: [],
     gudang: [],
     // keranjang: [{ barang_id, nama_barang, satuan, harga, harga_asli, jumlah, diskon, jenis_pesanan, is_kemasan }]
@@ -283,7 +285,8 @@ function setJenisPesananGlobal(tipe) {
 
     if (tipe === 'dine_in') {
         state.cart = state.cart.filter((i) => !i.is_kemasan);
-        state.selectedKemasanId = null;
+    } else {
+        state.pakaiKemasan = true;
     }
 
     render();
@@ -292,9 +295,13 @@ function setJenisPesananGlobal(tipe) {
 function hapusItem(key) {
     const target = state.cart.find((i) => i.key === key);
     if (target?.is_kemasan) {
-        state.selectedKemasanId = null;
+        state.cart = state.cart.filter((i) => i.key !== key);
+        if (!state.cart.some((i) => i.is_kemasan)) {
+            state.pakaiKemasan = false;
+        }
+    } else {
+        state.cart = state.cart.filter((i) => i.key !== key);
     }
-    state.cart = state.cart.filter((i) => i.key !== key);
     render();
 }
 
@@ -347,7 +354,7 @@ function setJumlah(key, jumlah) {
 
 function resetTransaksi() {
     state.cart = [];
-    state.selectedKemasanId = null;
+    state.pakaiKemasan = true;
     state.diskonTransaksi = 0;
     state.bayar = 0;
     state.isUangPas = false;
@@ -738,6 +745,14 @@ function tampilkanStruk(payload) {
         const biayaKirimVal = Number(payload.biaya_kirim || 0);
         const netoSebelumKirim = Math.max(0, (payload.neto || 0) - biayaKirimVal);
 
+        const isDelivery = biayaKirimVal > 0 || !!payload.alamat_pengiriman || payload.details?.some((d) => d.jenis_pesanan === 'delivery');
+        const deliveryHeaderHtml = isDelivery
+            ? `<div class="mt-1.5 pt-1.5 border-t border-dotted border-zinc-400 text-center">
+                <p class="text-xs font-bold text-zinc-900 tracking-wide uppercase">[PESANAN DELIVERY]</p>
+                ${payload.alamat_pengiriman ? `<p class="text-xs text-zinc-700 font-normal mt-0.5"><span class="font-semibold">Alamat:</span> ${escapeHtml(payload.alamat_pengiriman)}</p>` : ''}
+               </div>`
+            : '';
+
         body.innerHTML = `
             <div class="text-center font-sans">
                 <h2 class="font-bold text-base text-zinc-900 tracking-tight">${escapeHtml(toko.nama || 'Toko PKL')}</h2>
@@ -746,6 +761,7 @@ function tampilkanStruk(payload) {
                 <p class="text-xs text-zinc-700 font-normal mt-0.5">${escapeHtml(gudangNama)}</p>
                 <p class="text-xs text-zinc-700 font-normal mt-0.5">Nota: ${escapeHtml(payload.nomer_nota)} &bull; ${escapeHtml(fullDateTime)}</p>
                 <p class="text-xs text-zinc-700 font-normal mt-0.5">Kasir: ${escapeHtml(namaKasir)}</p>
+                ${deliveryHeaderHtml}
             </div>
 
             <div class="border-b border-dashed border-zinc-400 my-3"></div>
@@ -1130,6 +1146,7 @@ function cetakUlangRiwayat(r) {
                 : 0
         ),
         neto: r.neto,
+        alamat_pengiriman: r.alamat_pengiriman ?? null,
         biaya_kirim: r.biaya_kirim ?? 0,
         subtotal_normal: r.details.reduce((s, d) => s + Number(d.harga || 0) * Number(d.jumlah || 0), 0),
         potongan_barang: r.details.reduce((s, d) => s + Number(d.diskon || 0), 0),
@@ -1615,9 +1632,9 @@ const TIPE_ICON_SVG = {
 const TIPE_LABEL = { dine_in: 'Dine In', take_away: 'Take Away', delivery: 'Delivery' };
 
 const TIPE_BADGE = {
-    dine_in: { cls: 'bg-zinc-100 text-zinc-600 border-zinc-200', label: 'Dine In' },
-    take_away: { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: 'Take Away' },
-    delivery: { cls: 'bg-sky-50 text-sky-700 border-sky-200', label: 'Delivery' },
+    dine_in: { cls: 'bg-zinc-100 text-zinc-700 border-zinc-200', label: 'Dine In' },
+    take_away: { cls: 'bg-zinc-800 text-white border-zinc-900', label: 'Take Away' },
+    delivery: { cls: 'bg-zinc-200 text-zinc-900 border-zinc-300', label: 'Delivery' },
 };
 
 function tipeBadgeHtml(jenis) {
@@ -1699,7 +1716,6 @@ function renderCart() {
                 </button>
                 <div data-order-items="${key}" class="space-y-2 ${collapsed ? 'hidden' : ''}">
                     ${itemsHtml}
-                    ${deliveryFields}
                 </div>
             </div>`);
         });
@@ -1744,10 +1760,10 @@ function renderCart() {
         if (potonganBarang > 0) lblPotonganBarang.textContent = `- ${rupiah(potonganBarang)}`;
     }
 
-    const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery');
+    const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery') || state.jenisPesanan === 'delivery';
     const rowBiayaKirim = document.getElementById('row-biaya-kirim');
     const lblBiayaKirim = document.getElementById('lbl-biaya-kirim');
-    if (rowBiayaKirim) rowBiayaKirim.classList.toggle('hidden', !hasDelivery);
+    if (rowBiayaKirim) rowBiayaKirim.classList.toggle('hidden', !hasDelivery || !state.biayaKirim);
     if (lblBiayaKirim) lblBiayaKirim.textContent = rupiah(state.biayaKirim || 0);
 
     const potonganNota = nominalDiskon();
@@ -1846,7 +1862,77 @@ function renderGudangStokInfo() {
     if (elTotal) elTotal.textContent = `${totalStok.toLocaleString('id-ID')} stok`;
 }
 
-function renderPackagingPicker() {
+function sinkronkanKemasanPerItem() {
+    const isTakeAwayOrDelivery = state.jenisPesanan === 'take_away' || state.jenisPesanan === 'delivery';
+
+    if (!isTakeAwayOrDelivery || !state.pakaiKemasan) {
+        state.cart = state.cart.filter((i) => !i.is_kemasan);
+        return;
+    }
+
+    // Hitung kebutuhan kemasan per kemasan_id dari item reguler (non-kemasan, non-bonus)
+    const requiredKemasans = {}; // { [kemasan_id]: { kemasan: Object, totalQty: Number } }
+
+    state.cart.forEach((item) => {
+        if (item.is_kemasan || item.is_bonus) return;
+
+        const barang = state.barang.find((b) => Number(b.id) === Number(item.barang_id));
+        if (!barang || !barang.kemasan_id) return;
+
+        const kId = Number(barang.kemasan_id);
+        const kemasanObj = barang.kemasan
+            || state.barangKemasan.find((k) => Number(k.id) === kId)
+            || state.barang.find((b) => Number(b.id) === kId);
+
+        if (!kemasanObj) return;
+
+        if (!requiredKemasans[kId]) {
+            requiredKemasans[kId] = {
+                kemasan: kemasanObj,
+                totalQty: 0,
+            };
+        }
+        requiredKemasans[kId].totalQty += Number(item.jumlah || 0);
+    });
+
+    const activeKemasanIds = new Set();
+
+    Object.entries(requiredKemasans).forEach(([kIdStr, req]) => {
+        const kId = Number(kIdStr);
+        if (req.totalQty <= 0) return;
+
+        activeKemasanIds.add(kId);
+        const existing = state.cart.find((i) => i.is_kemasan && Number(i.barang_id) === kId);
+
+        if (existing) {
+            existing.jumlah = req.totalQty;
+            existing.harga = Number(req.kemasan.harga_jual || 0);
+            existing.harga_asli = Number(req.kemasan.harga_jual || 0);
+            existing.satuan = req.kemasan.satuan || 'Pcs';
+            existing.jenis_pesanan = state.jenisPesanan;
+        } else {
+            state.cart.push({
+                barang_id: req.kemasan.id,
+                nama_barang: req.kemasan.nama_barang,
+                key: `kemasan:${req.kemasan.id}:${state.jenisPesanan}`,
+                satuan: req.kemasan.satuan || 'Pcs',
+                harga: Number(req.kemasan.harga_jual || 0),
+                harga_asli: Number(req.kemasan.harga_jual || 0),
+                jumlah: req.totalQty,
+                diskon: 0,
+                jenis_pesanan: state.jenisPesanan,
+                is_kemasan: true,
+            });
+        }
+    });
+
+    state.cart = state.cart.filter((i) => {
+        if (!i.is_kemasan) return true;
+        return activeKemasanIds.has(Number(i.barang_id));
+    });
+}
+
+function renderPackagingToggle() {
     const picker = document.getElementById('packaging-picker');
     if (!picker) return;
 
@@ -1854,76 +1940,77 @@ function renderPackagingPicker() {
     picker.classList.toggle('hidden', !isTakeAwayOrDelivery);
     if (!isTakeAwayOrDelivery) return;
 
-    const select = document.getElementById('select-kemasan');
-    const badge = document.getElementById('packaging-status-badge');
-    if (!select) return;
+    const btnPakai = document.getElementById('btn-kemasan-pakai');
+    const btnTanpa = document.getElementById('btn-kemasan-tanpa');
+    const infoText = document.getElementById('packaging-info-text');
 
-    const existingKemasan = state.cart.find((i) => i.is_kemasan);
-    const activeId = existingKemasan ? existingKemasan.barang_id : null;
-    state.selectedKemasanId = activeId;
+    const kemasanItemsInCart = state.cart.filter((i) => i.is_kemasan);
 
-    let optionsHtml = '<option value="">Tanpa Kemasan / Bawa Wadah Sendiri (Gratis)</option>';
-    const list = state.barangKemasan || [];
-    list.forEach((k) => {
-        const stok = Number(k.stok?.[state.gudangId] ?? 0);
-        const selected = activeId === k.id ? 'selected' : '';
-        const disabled = stok <= 0 ? 'disabled' : '';
-        const stokLabel = stok <= 0 ? ' (Stok Habis)' : ` (Stok: ${stok})`;
-        optionsHtml += `<option value="${k.id}" ${selected} ${disabled}>${escapeHtml(k.nama_barang)} - ${rupiah(k.harga_jual)}${stokLabel}</option>`;
-    });
-
-    select.innerHTML = optionsHtml;
-
-    if (badge) {
-        if (activeId) {
-            const kObj = list.find((k) => k.id === activeId);
-            badge.textContent = kObj ? kObj.nama_barang : 'Pakai Kemasan';
-            badge.className = 'text-[10px] font-bold text-white bg-zinc-900 rounded px-1.5 py-0.5 shadow-2xs';
+    if (infoText) {
+        if (!state.pakaiKemasan) {
+            infoText.textContent = 'Pelanggan membawa wadah sendiri (Tanpa kemasan)';
+        } else if (kemasanItemsInCart.length > 0) {
+            const rincian = kemasanItemsInCart
+                .map((k) => `${k.jumlah}x ${k.nama_barang} (+${rupiah(k.harga * k.jumlah)})`)
+                .join(', ');
+            infoText.textContent = rincian;
         } else {
-            badge.textContent = 'Bawa Wadah Sendiri';
-            badge.className = 'text-[10px] font-medium text-zinc-500 bg-white border border-zinc-200 rounded px-1.5 py-0.5';
+            infoText.textContent = 'Menu yang dipilih tidak membutuhkan kemasan khusus';
+        }
+    }
+
+    if (btnPakai && btnTanpa) {
+        if (state.pakaiKemasan) {
+            btnPakai.className = 'flex items-center justify-center gap-1 text-xs font-bold py-1.5 px-2 rounded-md transition-all cursor-pointer select-none bg-zinc-900 text-white shadow-xs';
+            btnTanpa.className = 'flex items-center justify-center gap-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-all cursor-pointer select-none text-zinc-600 hover:text-zinc-900';
+        } else {
+            btnPakai.className = 'flex items-center justify-center gap-1 text-xs font-semibold py-1.5 px-2 rounded-md transition-all cursor-pointer select-none text-zinc-600 hover:text-zinc-900';
+            btnTanpa.className = 'flex items-center justify-center gap-1 text-xs font-bold py-1.5 px-2 rounded-md transition-all cursor-pointer select-none bg-zinc-900 text-white shadow-xs';
         }
     }
 }
 
-function pilihKemasan(kemasanId) {
-    state.cart = state.cart.filter((i) => !i.is_kemasan);
+function renderDeliveryInfoBox() {
+    const box = document.getElementById('delivery-info-box');
+    if (!box) return;
 
-    if (kemasanId) {
-        const kemasan = state.barangKemasan.find((k) => k.id === kemasanId);
-        if (kemasan) {
-            const stok = Number(kemasan.stok?.[state.gudangId] ?? 0);
-            if (stok <= 0) {
-                toast(`Stok ${kemasan.nama_barang} habis di gudang ini`, true);
-                render();
-                return;
-            }
-            state.cart.push({
-                barang_id: kemasan.id,
-                nama_barang: kemasan.nama_barang,
-                key: `kemasan:${kemasan.id}:${state.jenisPesanan}`,
-                satuan: kemasan.satuan || 'Pcs',
-                harga: Number(kemasan.harga_jual || 0),
-                harga_asli: Number(kemasan.harga_jual || 0),
-                jumlah: 1,
-                diskon: 0,
-                jenis_pesanan: state.jenisPesanan,
-                is_kemasan: true,
-            });
-            state.selectedKemasanId = kemasanId;
-            toast(`Kemasan '${kemasan.nama_barang}' ditambahkan ke pesanan`);
+    const isDelivery = state.jenisPesanan === 'delivery';
+    box.classList.toggle('hidden', !isDelivery);
+
+    if (isDelivery) {
+        const alamatEl = document.getElementById('delivery-alamat');
+        const ongkirEl = document.getElementById('delivery-ongkir');
+        if (alamatEl && document.activeElement !== alamatEl) {
+            alamatEl.value = state.alamatPengiriman || '';
+        }
+        if (ongkirEl && document.activeElement !== ongkirEl) {
+            ongkirEl.value = state.biayaKirim > 0 ? state.biayaKirim.toLocaleString('id-ID') : '';
+        }
+    }
+}
+
+function toggleKemasan(pakai) {
+    state.pakaiKemasan = !!pakai;
+    render();
+
+    if (state.pakaiKemasan) {
+        const count = state.cart.filter((i) => i.is_kemasan).length;
+        if (count > 0) {
+            toast('Kemasan default menu digunakan');
+        } else {
+            toast('Menu saat ini tidak membutuhkan kemasan khusus');
         }
     } else {
-        state.selectedKemasanId = null;
+        toast('Bawa wadah sendiri (tanpa kemasan)');
     }
-
-    render();
 }
 
 function render() {
     updateCartTierPrices();
+    sinkronkanKemasanPerItem();
     renderProduk();
-    renderPackagingPicker();
+    renderPackagingToggle();
+    renderDeliveryInfoBox();
     renderCart();
     renderGudangStokInfo();
 }
@@ -2252,14 +2339,17 @@ function renderPaymentMethodPills() {
 // ------------------------- INIT -------------------------
 
 async function init() {
-    const [barang, jenis, gudang, kemasan] = await Promise.all([
+    const [barang, jenis, gudang, kemasan, kemasanDefault] = await Promise.all([
         getBarang(),
         getJenisBarang(),
         getGudang(),
         getBarangKemasan(),
+        getKemasanDefault(),
     ]);
     state.barang = barang;
     state.barangKemasan = kemasan || [];
+    state.kemasanDefault = kemasanDefault || null;
+    state.pakaiKemasan = true;
     state.jenisBarang = jenis;
     state.gudang = gudang;
     state.gudangId = gudang[0]?.id ?? null;
@@ -2304,11 +2394,28 @@ async function init() {
         btn.addEventListener('click', () => setJenisPesananGlobal(btn.dataset.tipePesan));
     });
 
-    // Pilihan Kemasan / Bungkus
-    document.getElementById('select-kemasan')?.addEventListener('change', (e) => {
-        const val = e.target.value;
-        pilihKemasan(val ? Number(val) : null);
-    });
+    // Saklar Toggle Kemasan
+    document.getElementById('btn-kemasan-pakai')?.addEventListener('click', () => toggleKemasan(true));
+    document.getElementById('btn-kemasan-tanpa')?.addEventListener('click', () => toggleKemasan(false));
+
+    // Input Alamat & Biaya Kirim Delivery
+    const deliveryAlamatEl = document.getElementById('delivery-alamat');
+    if (deliveryAlamatEl) {
+        deliveryAlamatEl.addEventListener('input', (e) => {
+            state.alamatPengiriman = e.target.value;
+        });
+    }
+
+    const deliveryOngkirEl = document.getElementById('delivery-ongkir');
+    if (deliveryOngkirEl) {
+        deliveryOngkirEl.addEventListener('input', (e) => {
+            const raw = e.target.value.replace(/\D/g, '');
+            const val = raw ? Number(raw) : 0;
+            state.biayaKirim = val;
+            e.target.value = val > 0 ? val.toLocaleString('id-ID') : '';
+            renderCart();
+        });
+    }
 
     // Modal Konfirmasi Gudang
     document.getElementById('btn-batal-gudang')?.addEventListener('click', () => {
@@ -2618,44 +2725,6 @@ async function init() {
         });
 
         cartItems.addEventListener('input', (e) => {
-            const alamatEl = e.target.closest('#input-alamat-pengiriman');
-            if (alamatEl) {
-                state.alamatPengiriman = alamatEl.value;
-                return;
-            }
-
-            const biayaEl = e.target.closest('#input-biaya-kirim');
-            if (biayaEl) {
-                const el = e.target;
-                const caret = el.selectionStart ?? el.value.length;
-                const digitsBeforeCaret = el.value.slice(0, caret).replace(/\D/g, '').length;
-                const raw = el.value.replace(/\D/g, '');
-                let restorePos = 0;
-                if (raw !== '') {
-                    const val = Number(raw);
-                    const formatted = val.toLocaleString('id-ID');
-                    el.value = formatted;
-                    state.biayaKirim = val;
-                    let pos = 0;
-                    let count = 0;
-                    while (pos < formatted.length && count < digitsBeforeCaret) {
-                        if (/\d/.test(formatted[pos])) count++;
-                        pos++;
-                    }
-                    restorePos = pos;
-                } else {
-                    el.value = '';
-                    state.biayaKirim = 0;
-                }
-                renderCart();
-                const fresh = document.getElementById('input-biaya-kirim');
-                if (fresh) {
-                    fresh.focus();
-                    fresh.setSelectionRange(restorePos, restorePos);
-                }
-                return;
-            }
-
             const qty = e.target.closest('[data-qty]');
             if (!qty) return;
             const qtyKey = qty.dataset.qty;

@@ -93,18 +93,20 @@ class BarangForm
                                     ->label('Tipe Barang / Fungsi Cafe')
                                     ->placeholder('Pilih tipe fungsi barang...')
                                     ->options([
-                                        'bahan_baku' => 'Bahan Baku (Kopi biji, susu, beras, dll)',
-                                        'setengah_jadi' => 'Setengah Jadi (Konsentrat espresso, saus marinasi, dll)',
                                         'barang_jadi' => 'Barang Jadi / Menu Olahan (Latte, nasi goreng, dll)',
                                         'barang_dagang' => 'Barang Dagang (Air mineral botol, snack kemasan, dll)',
-                                        'barang_pembantu' => 'Barang Pembantu (Cup plastik, sedotan, paper bag, dll)',
+                                        'kemasan' => 'Kemasan / Pembungkus (Cup takeaway, lunch box, paper bag, dll)',
+                                        'barang_pembantu' => 'Barang Pembantu (Sedotan, sendok plastik, tissue, dll)',
+                                        'bahan_baku' => 'Bahan Baku (Kopi biji, susu, beras, dll)',
+                                        'setengah_jadi' => 'Setengah Jadi (Konsentrat espresso, saus marinasi, dll)',
                                     ])
                                     ->required()
                                     ->live()
                                     ->afterStateUpdated(function ($state, Set $set) {
-                                        if (in_array($state, ['bahan_baku', 'setengah_jadi', 'barang_pembantu'])) {
+                                        if (in_array($state, ['bahan_baku', 'setengah_jadi', 'barang_pembantu', 'kemasan'])) {
                                             $set('bisa_dijual', false);
                                             $set('butuh_proses', false);
+                                            $set('kemasan_id', null);
                                         } elseif ($state === 'barang_jadi') {
                                             $set('bisa_dijual', true);
                                             $set('butuh_proses', true);
@@ -132,6 +134,19 @@ class BarangForm
                                         ->dehydrateStateUsing(fn ($state) => $state ? 'tersedia' : 'habis')
                                         ->default(true),
                                 ]),
+
+                                Select::make('kemasan_id')
+                                    ->label('Kemasan Default (Take Away / Delivery)')
+                                    ->placeholder('Pilih kemasan default... (Kosongkan jika tidak ada kemasan)')
+                                    ->relationship(
+                                        'kemasan',
+                                        'nama_barang',
+                                        modifyQueryUsing: fn ($query) => $query->whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])->where('status', 'tersedia')
+                                    )
+                                    ->searchable()
+                                    ->preload()
+                                    ->helperText('Kemasan yang otomatis disertakan saat menu ini dipesan untuk Take Away atau Delivery.')
+                                    ->hidden(fn ($get) => in_array($get('tipe_barang'), ['kemasan', 'barang_pembantu'])),
                             ])->columnSpan(1),
                         ]),
                     ]),
