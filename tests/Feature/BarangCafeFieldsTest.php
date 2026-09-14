@@ -193,4 +193,133 @@ class BarangCafeFieldsTest extends TestCase
             ->assertCanSeeTableRecords([$b1])
             ->assertCanNotSeeTableRecords([$b2]);
     }
+
+    public function test_kasir_endpoint_returns_barang_kemasan_and_excludes_barang_pembantu_from_main_list()
+    {
+        $user = User::factory()->create();
+        $gudang = Gudang::create(['nama_gudang' => 'Gudang Bar', 'alamat' => 'Bar']);
+        $jenis = JenisBarang::create(['nama_jenis' => 'Perlengkapan', 'kode_jenis' => 'PLK', 'deskripsi' => 'Perlengkapan']);
+
+        $bMain = Barang::create([
+            'jenis_barang_id' => $jenis->id,
+            'nama_barang' => 'Iced Latte',
+            'harga_beli' => 8000,
+            'harga_jual' => 20000,
+            'satuan' => 'Cup',
+            'tipe_barang' => 'barang_jadi',
+            'bisa_dijual' => true,
+            'status' => 'tersedia',
+        ]);
+
+        $bKemasan = Barang::create([
+            'jenis_barang_id' => $jenis->id,
+            'nama_barang' => 'Paper Bag Coklat',
+            'harga_beli' => 1000,
+            'harga_jual' => 2000,
+            'satuan' => 'Pcs',
+            'tipe_barang' => 'barang_pembantu',
+            'bisa_dijual' => true,
+            'status' => 'tersedia',
+        ]);
+
+        $response = $this->actingAs($user)->getJson(route('kasir.data'));
+        $response->assertOk();
+
+        $mainIds = collect($response->json('barang'))->pluck('id')->all();
+        $kemasanIds = collect($response->json('barangKemasan'))->pluck('id')->all();
+
+        $this->assertContains($bMain->id, $mainIds);
+        $this->assertNotContains($bKemasan->id, $mainIds);
+        $this->assertContains($bKemasan->id, $kemasanIds);
+    }
+
+    public function test_kasir_store_allows_delivery_without_address()
+    {
+        $user = User::factory()->create();
+        $gudang = Gudang::create(['nama_gudang' => 'Gudang Bar', 'alamat' => 'Bar']);
+        $jenis = JenisBarang::create(['nama_jenis' => 'Kopi', 'kode_jenis' => 'KPI', 'deskripsi' => 'Kopi']);
+
+        $b = Barang::create([
+            'jenis_barang_id' => $jenis->id,
+            'nama_barang' => 'Espresso',
+            'harga_beli' => 5000,
+            'harga_jual' => 15000,
+            'satuan' => 'Cup',
+            'tipe_barang' => 'barang_jadi',
+            'bisa_dijual' => true,
+            'status' => 'tersedia',
+        ]);
+        $gudang->barangs()->attach($b->id, ['stok' => 20]);
+
+        // Pesanan delivery tanpa alamat (misal via kurir ojol)
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+            'gudang_id' => $gudang->id,
+            'tanggal' => date('Y-m-d'),
+            'diskon' => 0,
+            'jenis_pembayaran' => 'tunai',
+            'bayar' => 15000,
+            'alamat_pengiriman' => null,
+            'biaya_kirim' => 0,
+            'details' => [
+                [
+                    'barang_id' => $b->id,
+                    'satuan' => 'Cup',
+                    'jumlah' => 1,
+                    'harga' => 15000,
+                    'diskon' => 0,
+                    'jenis_pesanan' => 'delivery',
+                ],
+            ],
+        ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseHas('detail_jual', [
+            'barang_id' => $b->id,
+            'jenis_pesanan' => 'delivery',
+        ]);
+    }
+
+    public function test_kasir_store_allows_packaging_barang_pembantu_and_reduces_stock()
+    {
+        $user = User::factory()->create();
+        $gudang = Gudang::create(['nama_gudang' => 'Gudang Bar', 'alamat' => 'Bar']);
+        $jenis = JenisBarang::create(['nama_jenis' => 'Kemasan', 'kode_jenis' => 'KMS', 'deskripsi' => 'Kemasan']);
+
+        $bKemasan = Barang::create([
+            'jenis_barang_id' => $jenis->id,
+            'nama_barang' => 'Paper Bag Large',
+            'harga_beli' => 1500,
+            'harga_jual' => 3000,
+            'satuan' => 'Pcs',
+            'tipe_barang' => 'barang_pembantu',
+            'bisa_dijual' => false, // meskipun false, tetap diizinkan karena tipe barang_pembantu
+            'status' => 'tersedia',
+        ]);
+        $gudang->barangs()->attach($bKemasan->id, ['stok' => 50]);
+
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+            'gudang_id' => $gudang->id,
+            'tanggal' => date('Y-m-d'),
+            'diskon' => 0,
+            'jenis_pembayaran' => 'tunai',
+            'bayar' => 3000,
+            'details' => [
+                [
+                    'barang_id' => $bKemasan->id,
+                    'satuan' => 'Pcs',
+                    'jumlah' => 1,
+                    'harga' => 3000,
+                    'diskon' => 0,
+                    'jenis_pesanan' => 'take_away',
+                ],
+            ],
+        ]);
+
+        $response->assertOk();
+
+        // Verifikasi stok gudang berkurang dari 50 menjadi 49
+        $stokGudang = $gudang->barangs()->where('barang_id', $bKemasan->id)->first()->pivot->stok;
+        $this->assertEquals(49, $stokGudang);
+    }
 }

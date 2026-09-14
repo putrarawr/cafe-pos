@@ -51,6 +51,11 @@ const mockData = {
         { id: 11, jenis_barang_id: 4, nama_barang: 'Buku Tulis 38 lbr', barcode: '8991001001111', nomer_seri: 'ATK-0002', harga_jual: 5000, satuan: 'pcs', stok: { 1: 60, 2: 20 }, units: [{ level: 1, satuan: 'pcs', faktor: 1, isi_info: null, harga_jual: 5000 }, { level: 2, satuan: 'pack', faktor: 10, isi_info: '1 pack = 10 pcs', harga_jual: 45000 }] },
         { id: 12, jenis_barang_id: 4, nama_barang: 'Spidol Papan Tulis', barcode: '8991001001212', nomer_seri: 'ATK-0003', harga_jual: 9000, satuan: 'pcs', stok: { 1: 20, 2: 4 }, units: [{ level: 1, satuan: 'pcs', faktor: 1, isi_info: null, harga_jual: 9000 }] },
     ],
+    barangKemasan: [
+        { id: 991, nama_barang: 'Cup Dingin + Tutup Seal 16oz', harga_jual: 1000, satuan: 'pcs', stok: { 1: 100, 2: 50 } },
+        { id: 992, nama_barang: 'Hot Paper Cup + Lid 8oz', harga_jual: 1500, satuan: 'pcs', stok: { 1: 100, 2: 50 } },
+        { id: 993, nama_barang: 'Lunch Box Kraft Makanan', harga_jual: 3000, satuan: 'pcs', stok: { 1: 100, 2: 50 } },
+    ],
 };
 
 let mockCounter = 1;
@@ -87,6 +92,13 @@ export async function getBarang() {
         }
     }
     return structuredClone(sumber().barang);
+}
+
+export async function getBarangKemasan() {
+    if (!USE_MOCK && window.KASIR_DATA && window.KASIR_DATA.barangKemasan) {
+        return structuredClone(window.KASIR_DATA.barangKemasan);
+    }
+    return structuredClone(sumber().barangKemasan || []);
 }
 
 export async function getJenisBarang() {

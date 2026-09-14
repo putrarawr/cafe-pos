@@ -304,6 +304,26 @@
                     </div>
                 </div>
 
+                {{-- Pilihan Kemasan / Bungkus (Aktif saat Take Away atau Delivery) --}}
+                <div id="packaging-picker" class="hidden shrink-0 border-b border-zinc-100 bg-zinc-50/70 px-4 py-2.5 space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-wide flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                                <path d="m3.3 7 8.7 5 8.7-5"/>
+                                <path d="M12 22V12"/>
+                            </svg>
+                            Kemasan / Bungkus
+                        </span>
+                        <span id="packaging-status-badge" class="text-[10px] font-medium text-zinc-500 bg-white border border-zinc-200 rounded px-1.5 py-0.5">Bawa Wadah Sendiri</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <select id="select-kemasan" class="flex-1 text-xs font-semibold bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-900 transition-colors">
+                            <option value="">Tanpa Kemasan / Bawa Wadah Sendiri (Gratis)</option>
+                        </select>
+                    </div>
+                </div>
+
                 {{-- Daftar Item Keranjang --}}
                 <div id="cart-items" class="flex-1 overflow-y-auto px-6 py-3 space-y-2.5"></div>
 

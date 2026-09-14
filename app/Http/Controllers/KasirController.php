@@ -100,38 +100,56 @@ class KasirController extends Controller
         return view('kasir', [
             'kasirData' => [
                 'karyawan' => $karyawanInfo,
-                'barang' => Barang::bisaDijual()->with('gudangs')->get()->map(fn (Barang $b) => [
-                    'id' => $b->id,
-                    'jenis_barang_id' => $b->jenis_barang_id,
-                    'nama_barang' => $b->nama_barang,
-                    'gambar' => $b->gambar_url,
-                    'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
-                    'status' => $b->status ?? 'tersedia',
-                    'butuh_proses' => (bool) $b->butuh_proses,
-                    'nomer_seri' => $b->nomer_seri,
-                    'barcode' => $b->barcode,
-                    'harga_jual' => (int) $b->harga_jual,
-                    'harga_beli' => (int) $b->harga_beli,
-                    'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
-                    'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
-                    'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
-                    'min_qty_2' => filled($b->min_qty_2) ? (int) $b->min_qty_2 : null,
-                    'nilai_tier_2' => (float) ($b->nilai_tier_2 ?? 0),
-                    'min_qty_3' => filled($b->min_qty_3) ? (int) $b->min_qty_3 : null,
-                    'nilai_tier_3' => (float) ($b->nilai_tier_3 ?? 0),
-                    'satuan' => $b->satuan ?? 'Pcs',
-                    'units' => $b->getAvailableUnits(),
-                    // stok per gudang dari pivot barang_gudang: { gudang_id: jumlah_dasar }
-                    'stok' => $b->gudangs->mapWithKeys(fn ($g) => [$g->id => (int) $g->pivot->stok]),
-                ]),
+                'barang' => Barang::bisaDijual()
+                    ->where(function ($q) {
+                        $q->whereNull('tipe_barang')
+                            ->orWhere('tipe_barang', '!=', 'barang_pembantu');
+                    })
+                    ->with('gudangs')
+                    ->get()
+                    ->map(fn(Barang $b) => [
+                        'id' => $b->id,
+                        'jenis_barang_id' => $b->jenis_barang_id,
+                        'nama_barang' => $b->nama_barang,
+                        'gambar' => $b->gambar_url,
+                        'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
+                        'status' => $b->status ?? 'tersedia',
+                        'butuh_proses' => (bool) $b->butuh_proses,
+                        'nomer_seri' => $b->nomer_seri,
+                        'barcode' => $b->barcode,
+                        'harga_jual' => (int) $b->harga_jual,
+                        'harga_beli' => (int) $b->harga_beli,
+                        'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
+                        'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
+                        'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
+                        'min_qty_2' => filled($b->min_qty_2) ? (int) $b->min_qty_2 : null,
+                        'nilai_tier_2' => (float) ($b->nilai_tier_2 ?? 0),
+                        'min_qty_3' => filled($b->min_qty_3) ? (int) $b->min_qty_3 : null,
+                        'nilai_tier_3' => (float) ($b->nilai_tier_3 ?? 0),
+                        'satuan' => $b->satuan ?? 'Pcs',
+                        'units' => $b->getAvailableUnits(),
+                        // stok per gudang dari pivot barang_gudang: { gudang_id: jumlah_dasar }
+                        'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+                    ]),
+                'barangKemasan' => Barang::where('tipe_barang', 'barang_pembantu')
+                    ->where('status', 'tersedia')
+                    ->with('gudangs')
+                    ->get()
+                    ->map(fn(Barang $b) => [
+                        'id' => $b->id,
+                        'nama_barang' => $b->nama_barang,
+                        'harga_jual' => (int) $b->harga_jual,
+                        'satuan' => $b->satuan ?? 'Pcs',
+                        'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+                    ]),
                 'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
                 'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
                 'toko' => config('toko'),
                 'kasirList' => array_merge(
                     Karyawan::all()->pluck('nama_karyawan')->all(),
-                    User::all()->map(fn (User $u) => $u->name . ' [Admin]')->all(),
+                    User::all()->map(fn(User $u) => $u->name . ' [Admin]')->all(),
                 ),
-                'promoBonus' => PromoBonus::active()->get()->map(fn (PromoBonus $p) => [
+                'promoBonus' => PromoBonus::active()->get()->map(fn(PromoBonus $p) => [
                     'id' => $p->id,
                     'nama_promo' => $p->nama_promo,
                     'barang_utama_id' => $p->barang_utama_id,
@@ -152,33 +170,51 @@ class KasirController extends Controller
     public function data()
     {
         return response()->json([
-            'barang' => Barang::bisaDijual()->with('gudangs')->get()->map(fn (Barang $b) => [
-                'id' => $b->id,
-                'jenis_barang_id' => $b->jenis_barang_id,
-                'nama_barang' => $b->nama_barang,
-                'gambar' => $b->gambar_url,
-                'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
-                'status' => $b->status ?? 'tersedia',
-                'butuh_proses' => (bool) $b->butuh_proses,
-                'nomer_seri' => $b->nomer_seri,
-                'barcode' => $b->barcode,
-                'harga_jual' => (int) $b->harga_jual,
-                'harga_beli' => (int) $b->harga_beli,
-                'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
-                'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
-                'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
-                'min_qty_2' => filled($b->min_qty_2) ? (int) $b->min_qty_2 : null,
-                'nilai_tier_2' => (float) ($b->nilai_tier_2 ?? 0),
-                'min_qty_3' => filled($b->min_qty_3) ? (int) $b->min_qty_3 : null,
-                'nilai_tier_3' => (float) ($b->nilai_tier_3 ?? 0),
-                'satuan' => $b->satuan ?? 'Pcs',
-                'units' => $b->getAvailableUnits(),
-                'stok' => $b->gudangs->mapWithKeys(fn ($g) => [$g->id => (int) $g->pivot->stok]),
-            ]),
+            'barang' => Barang::bisaDijual()
+                ->where(function ($q) {
+                    $q->whereNull('tipe_barang')
+                        ->orWhere('tipe_barang', '!=', 'barang_pembantu');
+                })
+                ->with('gudangs')
+                ->get()
+                ->map(fn(Barang $b) => [
+                    'id' => $b->id,
+                    'jenis_barang_id' => $b->jenis_barang_id,
+                    'nama_barang' => $b->nama_barang,
+                    'gambar' => $b->gambar_url,
+                    'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
+                    'status' => $b->status ?? 'tersedia',
+                    'butuh_proses' => (bool) $b->butuh_proses,
+                    'nomer_seri' => $b->nomer_seri,
+                    'barcode' => $b->barcode,
+                    'harga_jual' => (int) $b->harga_jual,
+                    'harga_beli' => (int) $b->harga_beli,
+                    'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
+                    'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
+                    'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
+                    'min_qty_2' => filled($b->min_qty_2) ? (int) $b->min_qty_2 : null,
+                    'nilai_tier_2' => (float) ($b->nilai_tier_2 ?? 0),
+                    'min_qty_3' => filled($b->min_qty_3) ? (int) $b->min_qty_3 : null,
+                    'nilai_tier_3' => (float) ($b->nilai_tier_3 ?? 0),
+                    'satuan' => $b->satuan ?? 'Pcs',
+                    'units' => $b->getAvailableUnits(),
+                    'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+                ]),
+            'barangKemasan' => Barang::where('tipe_barang', 'barang_pembantu')
+                ->where('status', 'tersedia')
+                ->with('gudangs')
+                ->get()
+                ->map(fn(Barang $b) => [
+                    'id' => $b->id,
+                    'nama_barang' => $b->nama_barang,
+                    'harga_jual' => (int) $b->harga_jual,
+                    'satuan' => $b->satuan ?? 'Pcs',
+                    'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+                ]),
             'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
             'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
             'toko' => config('toko'),
-            'promoBonus' => PromoBonus::active()->get()->map(fn (PromoBonus $p) => [
+            'promoBonus' => PromoBonus::active()->get()->map(fn(PromoBonus $p) => [
                 'id' => $p->id,
                 'nama_promo' => $p->nama_promo,
                 'barang_utama_id' => $p->barang_utama_id,
@@ -190,9 +226,9 @@ class KasirController extends Controller
                 'is_kelipatan' => (bool) $p->is_kelipatan,
             ]),
         ])
-        ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
-        ->header('Pragma', 'no-cache')
-        ->header('Expires', '0');
+            ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 
     /**
@@ -225,15 +261,15 @@ class KasirController extends Controller
             }
             if ($kasir !== '') {
                 $q->where(function ($q2) use ($kasir, $kasirUser) {
-                    $q2->whereHas('karyawan', fn ($qq) => $qq->where('nama_karyawan', $kasir))
-                        ->orWhereHas('user', fn ($qq) => $qq->where('name', $kasirUser));
+                    $q2->whereHas('karyawan', fn($qq) => $qq->where('nama_karyawan', $kasir))
+                        ->orWhereHas('user', fn($qq) => $qq->where('name', $kasirUser));
                 });
             }
         };
 
         $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user'])
             ->whereDate('tanggal', $tanggal)
-            ->when($before !== null && (int) $before > 0, fn ($q) => $q->where('id', '<', (int) $before))
+            ->when($before !== null && (int) $before > 0, fn($q) => $q->where('id', '<', (int) $before))
             ->where($scope)
             ->orderByDesc('id')
             ->limit($limit)
@@ -244,7 +280,7 @@ class KasirController extends Controller
             ->selectRaw('count(*) as jumlah, coalesce(sum(neto), 0) as total_neto')
             ->first();
 
-        $items = $penjualan->map(fn (Penjualan $p) => $this->formatRiwayatItem($p));
+        $items = $penjualan->map(fn(Penjualan $p) => $this->formatRiwayatItem($p));
 
         return response()->json([
             'items' => $items,
@@ -303,7 +339,7 @@ class KasirController extends Controller
             'nama_kasir' => $p->nama_kasir,
             'gudang' => $p->gudang?->nama_gudang ?? '-',
             'jumlah_item' => (int) $p->details->sum('jumlah'),
-            'details' => $p->details->map(fn (DetailJual $d) => [
+            'details' => $p->details->map(fn(DetailJual $d) => [
                 'barang_id' => (int) $d->barang_id,
                 'nama_barang' => $d->barang?->nama_barang ?? '-',
                 'jumlah' => (int) $d->jumlah,
@@ -341,17 +377,8 @@ class KasirController extends Controller
             'details.*.satuan' => ['nullable', 'string'],
             'details.*.is_bonus' => ['nullable', 'boolean'],
             'details.*.promo_id' => ['nullable', 'integer', 'exists:promo_bonus,id'],
-            'details.*.jenis_pesanan' => ['required', 'in:dine_in,take_away,delivery'],
+            'details.*.jenis_pesanan' => ['nullable', 'in:dine_in,take_away,delivery'],
         ]);
-
-        // Validasi alamat pengiriman wajib jika ada item delivery
-        $hasDelivery = collect($data['details'])->contains(fn ($d) => $d['jenis_pesanan'] === 'delivery');
-        if ($hasDelivery && empty($data['alamat_pengiriman'])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Alamat pengiriman wajib diisi untuk pesanan Delivery.',
-            ], 422);
-        }
 
         $gudangId = $data['gudang_id'];
 
@@ -373,7 +400,7 @@ class KasirController extends Controller
                     'message' => "Menu '{$item->nama_barang}' sedang berstatus habis.",
                 ], 422);
             }
-            if (!$item->bisa_dijual) {
+            if (!$item->bisa_dijual && $item->tipe_barang !== 'barang_pembantu') {
                 return response()->json([
                     'success' => false,
                     'message' => "Barang '{$item->nama_barang}' tidak dapat dijual di kasir.",
@@ -440,7 +467,7 @@ class KasirController extends Controller
                 ->whereIn('barang_id', $barangs->keys()->all())
                 ->get()
                 ->keyBy('barang_id');
-            $stockMap = $stockRows->mapWithKeys(fn ($row) => [$row->barang_id => (int) $row->stok]);
+            $stockMap = $stockRows->mapWithKeys(fn($row) => [$row->barang_id => (int) $row->stok]);
 
             // ===== Bulk-lock semua Barang yang dijual dalam 1 query =====
             $lockedBarangs = Barang::lockForUpdate()
@@ -533,28 +560,28 @@ class KasirController extends Controller
             $userId = Auth::guard('web')->check() ? Auth::guard('web')->id() : null;
 
             // Tambahkan biaya kirim ke neto untuk perhitungan pembayaran
-        $netoWithKirim = $neto + (int) ($data['biaya_kirim'] ?? 0);
+            $netoWithKirim = $neto + (int) ($data['biaya_kirim'] ?? 0);
 
-        if ($data['jenis_pembayaran'] === 'tunai' && $data['bayar'] < $netoWithKirim) {
-            abort(422, 'Uang bayar kurang dari total');
-        }
-        $bayarFinal = $data['jenis_pembayaran'] === 'tunai' ? $data['bayar'] : $netoWithKirim;
+            if ($data['jenis_pembayaran'] === 'tunai' && $data['bayar'] < $netoWithKirim) {
+                abort(422, 'Uang bayar kurang dari total');
+            }
+            $bayarFinal = $data['jenis_pembayaran'] === 'tunai' ? $data['bayar'] : $netoWithKirim;
 
-        $penjualan = Penjualan::create([
-            'nomer_nota' => $nomerNota,
-            'karyawan_id' => $karyawanId,
-            'user_id' => $userId,
-            'gudang_id' => $gudangId,
-            'tanggal' => $data['tanggal'],
-            'total' => $total,
-            'diskon' => $diskonNominal,
-            'neto' => $netoWithKirim,
-            'jenis_pembayaran' => $data['jenis_pembayaran'],
-            'bayar' => $bayarFinal,
-            'kembalian' => max(0, $bayarFinal - $netoWithKirim),
-            'alamat_pengiriman' => $data['alamat_pengiriman'] ?? null,
-            'biaya_kirim' => (int) ($data['biaya_kirim'] ?? 0),
-        ]);
+            $penjualan = Penjualan::create([
+                'nomer_nota' => $nomerNota,
+                'karyawan_id' => $karyawanId,
+                'user_id' => $userId,
+                'gudang_id' => $gudangId,
+                'tanggal' => $data['tanggal'],
+                'total' => $total,
+                'diskon' => $diskonNominal,
+                'neto' => $netoWithKirim,
+                'jenis_pembayaran' => $data['jenis_pembayaran'],
+                'bayar' => $bayarFinal,
+                'kembalian' => max(0, $bayarFinal - $netoWithKirim),
+                'alamat_pengiriman' => $data['alamat_pengiriman'] ?? null,
+                'biaya_kirim' => (int) ($data['biaya_kirim'] ?? 0),
+            ]);
 
             // ===== Bulk-insert DetailJual (1 query alih-alih N) =====
             $detailRows = [];

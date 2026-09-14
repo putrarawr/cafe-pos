@@ -168,13 +168,13 @@ class Barang extends Model
         $totalQtyDasar = $qty * $faktor;
 
         $tiers = [];
-        if (filled($this->min_qty_3) && (int)$this->min_qty_3 > 0 && (float)($this->nilai_tier_3 ?? 0) > 0) {
+        if (filled($this->min_qty_3) && (int) $this->min_qty_3 > 0 && (float) ($this->nilai_tier_3 ?? 0) > 0) {
             $tiers[] = ['min_qty' => (int) $this->min_qty_3, 'nilai' => (float) $this->nilai_tier_3];
         }
-        if (filled($this->min_qty_2) && (int)$this->min_qty_2 > 0 && (float)($this->nilai_tier_2 ?? 0) > 0) {
+        if (filled($this->min_qty_2) && (int) $this->min_qty_2 > 0 && (float) ($this->nilai_tier_2 ?? 0) > 0) {
             $tiers[] = ['min_qty' => (int) $this->min_qty_2, 'nilai' => (float) $this->nilai_tier_2];
         }
-        if (filled($this->min_qty_1) && (int)$this->min_qty_1 > 0 && (float)($this->nilai_tier_1 ?? 0) > 0) {
+        if (filled($this->min_qty_1) && (int) $this->min_qty_1 > 0 && (float) ($this->nilai_tier_1 ?? 0) > 0) {
             $tiers[] = ['min_qty' => (int) $this->min_qty_1, 'nilai' => (float) $this->nilai_tier_1];
         }
 

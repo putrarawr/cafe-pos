@@ -7,6 +7,7 @@
 
 import {
     getBarang,
+    getBarangKemasan,
     getJenisBarang,
     getGudang,
     getRiwayat,
@@ -19,9 +20,11 @@ import {
 
 const state = {
     barang: [],
+    barangKemasan: [],
+    selectedKemasanId: null,
     jenisBarang: [],
     gudang: [],
-    // keranjang: [{ barang_id, nama_barang, satuan, harga, harga_asli, jumlah, diskon, jenis_pesanan }]
+    // keranjang: [{ barang_id, nama_barang, satuan, harga, harga_asli, jumlah, diskon, jenis_pesanan, is_kemasan }]
     // harga_asli = harga normal per satuan, diskon = potongan rupiah dari harga bertingkat
     cart: [],
     gudangId: null,
@@ -278,10 +281,19 @@ function setJenisPesananGlobal(tipe) {
         state.biayaKirim = 0;
     }
 
+    if (tipe === 'dine_in') {
+        state.cart = state.cart.filter((i) => !i.is_kemasan);
+        state.selectedKemasanId = null;
+    }
+
     render();
 }
 
 function hapusItem(key) {
+    const target = state.cart.find((i) => i.key === key);
+    if (target?.is_kemasan) {
+        state.selectedKemasanId = null;
+    }
     state.cart = state.cart.filter((i) => i.key !== key);
     render();
 }
@@ -312,7 +324,8 @@ function setJumlah(key, jumlah) {
     const item = state.cart.find((i) => i.key === key);
     if (!item) return;
 
-    const barang = state.barang.find((b) => b.id === item.barang_id);
+    const barang = state.barang.find((b) => b.id === item.barang_id)
+        || state.barangKemasan.find((b) => b.id === item.barang_id);
     const units = barang ? getUnitsForBarang(barang) : [];
     const unitObj = units.find((u) => u.satuan === item.satuan);
     const faktor = unitObj ? unitObj.faktor : 1;
@@ -334,6 +347,7 @@ function setJumlah(key, jumlah) {
 
 function resetTransaksi() {
     state.cart = [];
+    state.selectedKemasanId = null;
     state.diskonTransaksi = 0;
     state.bayar = 0;
     state.isUangPas = false;
@@ -383,12 +397,7 @@ async function prosesBayar() {
         toast('Pilih gudang dulu', true);
         return;
     }
-    // Validasi alamat pengiriman jika ada item delivery
-    const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery');
-    if (hasDelivery && !state.alamatPengiriman.trim()) {
-        toast('Alamat pengiriman wajib diisi untuk pesanan Delivery', true);
-        return;
-    }
+    // Alamat pengiriman sekarang opsional (bisa dikosongkan jika via ojol / pihak ketiga)
     if (state.jenisPembayaran === 'tunai' && state.bayar < totalNeto()) {
         if (!state.paymentExpanded) {
             togglePaymentDetails(true);
@@ -1421,7 +1430,8 @@ function updateCartTierPrices() {
             return;
         }
 
-        const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id));
+        const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id))
+            || state.barangKemasan.find((b) => Number(b.id) === Number(i.barang_id));
         if (!barang) return;
 
         const units = getUnitsForBarang(barang);
@@ -1494,7 +1504,8 @@ function buildCartCard(i, idx) {
         </div>`;
     }
 
-    const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id));
+    const barang = state.barang.find((b) => Number(b.id) === Number(i.barang_id))
+        || state.barangKemasan.find((b) => Number(b.id) === Number(i.barang_id));
     const units = barang ? getUnitsForBarang(barang) : [{ satuan: i.satuan, harga_jual: i.harga }];
     const selectedUnitObj = units.find((u) => u.satuan === i.satuan) ?? units[0];
 
@@ -1530,7 +1541,10 @@ function buildCartCard(i, idx) {
             <div class="min-w-0 flex-1">
                 <!-- Judul Item -->
                 <div class="flex items-center justify-between gap-2">
-                    <p class="text-[13px] font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        ${i.is_kemasan ? '<span class="text-[10px] font-bold text-zinc-900 bg-zinc-200 border border-zinc-300 px-1.5 py-0.5 rounded-md shrink-0">[KEMASAN]</span>' : ''}
+                        <p class="text-[13px] font-bold text-zinc-900 leading-snug truncate" title="${escapeHtml(i.nama_barang)}">${escapeHtml(i.nama_barang)}</p>
+                    </div>
                     ${tipeBadgeHtml(i.jenis_pesanan)}
                 </div>
 
@@ -1663,11 +1677,11 @@ function renderCart() {
             const deliveryFields = key === 'delivery'
                 ? `<div class="rounded-xl border border-zinc-200 bg-zinc-50 p-3 space-y-2.5">
                     <div>
-                        <label for="input-alamat-pengiriman" class="block text-xs font-bold text-zinc-600 mb-1">Alamat Pengiriman <span class="text-red-500">*</span></label>
-                        <textarea id="input-alamat-pengiriman" rows="2" placeholder="Isi alamat lengkap untuk pengantaran" class="w-full text-xs rounded-xl border border-zinc-200 bg-white px-3 py-2 focus:outline-none focus:border-zinc-900 transition-colors resize-none">${escapeHtml(state.alamatPengiriman)}</textarea>
+                        <label for="input-alamat-pengiriman" class="block text-xs font-bold text-zinc-600 mb-1">Alamat Pengiriman <span class="text-zinc-400 font-normal">(Opsional / Kosongkan jika via Ojol)</span></label>
+                        <textarea id="input-alamat-pengiriman" rows="2" placeholder="Kosongkan jika dijemput kurir ojek online atau ketik alamat tujuan" class="w-full text-xs rounded-xl border border-zinc-200 bg-white px-3 py-2 focus:outline-none focus:border-zinc-900 transition-colors resize-none">${escapeHtml(state.alamatPengiriman)}</textarea>
                     </div>
                     <div>
-                        <label for="input-biaya-kirim" class="block text-xs font-bold text-zinc-600 mb-1">Biaya Kirim</label>
+                        <label for="input-biaya-kirim" class="block text-xs font-bold text-zinc-600 mb-1">Biaya Kirim <span class="text-zinc-400 font-normal">(Opsional)</span></label>
                         <input id="input-biaya-kirim" type="text" inputmode="numeric" placeholder="0" value="${state.biayaKirim ? state.biayaKirim.toLocaleString('id-ID') : ''}" class="w-full text-right text-sm font-semibold tabular-nums rounded-xl border border-zinc-200 bg-white px-3 py-2 focus:outline-none focus:border-zinc-900 transition-colors">
                     </div>
                 </div>`
@@ -1832,9 +1846,84 @@ function renderGudangStokInfo() {
     if (elTotal) elTotal.textContent = `${totalStok.toLocaleString('id-ID')} stok`;
 }
 
+function renderPackagingPicker() {
+    const picker = document.getElementById('packaging-picker');
+    if (!picker) return;
+
+    const isTakeAwayOrDelivery = state.jenisPesanan === 'take_away' || state.jenisPesanan === 'delivery';
+    picker.classList.toggle('hidden', !isTakeAwayOrDelivery);
+    if (!isTakeAwayOrDelivery) return;
+
+    const select = document.getElementById('select-kemasan');
+    const badge = document.getElementById('packaging-status-badge');
+    if (!select) return;
+
+    const existingKemasan = state.cart.find((i) => i.is_kemasan);
+    const activeId = existingKemasan ? existingKemasan.barang_id : null;
+    state.selectedKemasanId = activeId;
+
+    let optionsHtml = '<option value="">Tanpa Kemasan / Bawa Wadah Sendiri (Gratis)</option>';
+    const list = state.barangKemasan || [];
+    list.forEach((k) => {
+        const stok = Number(k.stok?.[state.gudangId] ?? 0);
+        const selected = activeId === k.id ? 'selected' : '';
+        const disabled = stok <= 0 ? 'disabled' : '';
+        const stokLabel = stok <= 0 ? ' (Stok Habis)' : ` (Stok: ${stok})`;
+        optionsHtml += `<option value="${k.id}" ${selected} ${disabled}>${escapeHtml(k.nama_barang)} - ${rupiah(k.harga_jual)}${stokLabel}</option>`;
+    });
+
+    select.innerHTML = optionsHtml;
+
+    if (badge) {
+        if (activeId) {
+            const kObj = list.find((k) => k.id === activeId);
+            badge.textContent = kObj ? kObj.nama_barang : 'Pakai Kemasan';
+            badge.className = 'text-[10px] font-bold text-white bg-zinc-900 rounded px-1.5 py-0.5 shadow-2xs';
+        } else {
+            badge.textContent = 'Bawa Wadah Sendiri';
+            badge.className = 'text-[10px] font-medium text-zinc-500 bg-white border border-zinc-200 rounded px-1.5 py-0.5';
+        }
+    }
+}
+
+function pilihKemasan(kemasanId) {
+    state.cart = state.cart.filter((i) => !i.is_kemasan);
+
+    if (kemasanId) {
+        const kemasan = state.barangKemasan.find((k) => k.id === kemasanId);
+        if (kemasan) {
+            const stok = Number(kemasan.stok?.[state.gudangId] ?? 0);
+            if (stok <= 0) {
+                toast(`Stok ${kemasan.nama_barang} habis di gudang ini`, true);
+                render();
+                return;
+            }
+            state.cart.push({
+                barang_id: kemasan.id,
+                nama_barang: kemasan.nama_barang,
+                key: `kemasan:${kemasan.id}:${state.jenisPesanan}`,
+                satuan: kemasan.satuan || 'Pcs',
+                harga: Number(kemasan.harga_jual || 0),
+                harga_asli: Number(kemasan.harga_jual || 0),
+                jumlah: 1,
+                diskon: 0,
+                jenis_pesanan: state.jenisPesanan,
+                is_kemasan: true,
+            });
+            state.selectedKemasanId = kemasanId;
+            toast(`Kemasan '${kemasan.nama_barang}' ditambahkan ke pesanan`);
+        }
+    } else {
+        state.selectedKemasanId = null;
+    }
+
+    render();
+}
+
 function render() {
     updateCartTierPrices();
     renderProduk();
+    renderPackagingPicker();
     renderCart();
     renderGudangStokInfo();
 }
@@ -2163,12 +2252,14 @@ function renderPaymentMethodPills() {
 // ------------------------- INIT -------------------------
 
 async function init() {
-    const [barang, jenis, gudang] = await Promise.all([
+    const [barang, jenis, gudang, kemasan] = await Promise.all([
         getBarang(),
         getJenisBarang(),
         getGudang(),
+        getBarangKemasan(),
     ]);
     state.barang = barang;
+    state.barangKemasan = kemasan || [];
     state.jenisBarang = jenis;
     state.gudang = gudang;
     state.gudangId = gudang[0]?.id ?? null;
@@ -2211,6 +2302,12 @@ async function init() {
     // Pilih Tipe Pesanan Global
     document.querySelectorAll('[data-tipe-pesan]').forEach((btn) => {
         btn.addEventListener('click', () => setJenisPesananGlobal(btn.dataset.tipePesan));
+    });
+
+    // Pilihan Kemasan / Bungkus
+    document.getElementById('select-kemasan')?.addEventListener('change', (e) => {
+        const val = e.target.value;
+        pilihKemasan(val ? Number(val) : null);
     });
 
     // Modal Konfirmasi Gudang
