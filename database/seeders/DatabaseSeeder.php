@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             MasterDataSeeder::class,
             KemasanSeeder::class,
+            AplikatorSeeder::class,
             PromoBonusSeeder::class,
             TransaksiSeeder::class,
         ]);

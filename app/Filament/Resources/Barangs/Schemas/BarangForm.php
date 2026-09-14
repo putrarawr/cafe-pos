@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Barangs\Schemas;
 
 use App\Models\JenisBarang;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -149,6 +150,44 @@ class BarangForm
                                     ->hidden(fn ($get) => in_array($get('tipe_barang'), ['kemasan', 'barang_pembantu'])),
                             ])->columnSpan(1),
                         ]),
+                    ]),
+
+                Section::make('Harga Delivery / Aplikator Online')
+                    ->description('Atur harga jual khusus untuk masing-masing platform delivery (GoFood, GrabFood, ShopeeFood, Maxim, dll)')
+                    ->collapsible()
+                    ->columnSpanFull()
+                    ->schema([
+                        Repeater::make('hargaAplikators')
+                            ->relationship('hargaAplikators')
+                            ->label('Daftar Harga Delivery per Aplikator')
+                            ->schema([
+                                Grid::make(2)->schema([
+                                    Select::make('aplikator_id')
+                                        ->label('Platform / Aplikator')
+                                        ->relationship(
+                                            'aplikator',
+                                            'nama_aplikator',
+                                            modifyQueryUsing: fn ($query) => $query->where('status_aktif', true)
+                                        )
+                                        ->searchable()
+                                        ->preload()
+                                        ->required()
+                                        ->distinct()
+                                        ->disableOptionsWhenSelectedInSiblingRepeaterItems(),
+
+                                    TextInput::make('harga_jual')
+                                        ->label('Harga Jual Delivery')
+                                        ->numeric()
+                                        ->prefix('Rp')
+                                        ->required()
+                                        ->helperText('Harga yang berlaku saat menu ini dipesan melalui aplikator tersebut'),
+                                ]),
+                            ])
+                            ->columns(1)
+                            ->addActionLabel('+ Tambah Harga Aplikator')
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->cloneable(),
                     ]),
 
                 Section::make('Harga Jual Bertingkat (3 Level Quantity)')

@@ -378,4 +378,16 @@ class Barang extends Model
     {
         return $this->hasMany(Barang::class, 'kemasan_id');
     }
+
+    public function hargaAplikators(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(BarangHargaAplikator::class, 'barang_id');
+    }
+
+    public function aplikators(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Aplikator::class, 'barang_harga_aplikator')
+            ->withPivot('harga_jual')
+            ->withTimestamps();
+    }
 }
