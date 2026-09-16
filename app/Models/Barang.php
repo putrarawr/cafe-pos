@@ -178,9 +178,9 @@ class Barang extends Model
     /**
      * Hitung harga per-unit berdasarkan tier quantity bertingkat.
      */
-    public function getHargaTierForQty(int $qty, ?string $satuan = null): int
+    public function getHargaTierForQty(int $qty, ?string $satuan = null, ?int $basePrice = null): int
     {
-        $basePrice = $this->getHargaJualForSatuan($satuan);
+        $basePrice ??= $this->getHargaJualForSatuan($satuan);
         $tipe = $this->tipe_harga_bertingkat ?? 'persen';
         $faktor = $this->getFaktorKonversi($satuan);
         $totalQtyDasar = $qty * $faktor;

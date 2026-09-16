@@ -36,9 +36,16 @@ const mockData = {
         { id: 1, nama_gudang: 'Gudang Utama', alamat: 'Jl. Raya No. 1' },
         { id: 2, nama_gudang: 'Rak Toko Depan', alamat: 'Area kasir' },
     ],
+    aplikator: [
+        { id: 1, nama_aplikator: 'GoFood', kode_aplikator: 'GOFOOD', persentase_komisi: 20 },
+        { id: 2, nama_aplikator: 'GrabFood', kode_aplikator: 'GRABFOOD', persentase_komisi: 20 },
+        { id: 3, nama_aplikator: 'ShopeeFood', kode_aplikator: 'SHOPEEFOOD', persentase_komisi: 20 },
+        { id: 4, nama_aplikator: 'Maxim Food', kode_aplikator: 'MAXIM', persentase_komisi: 15 },
+        { id: 5, nama_aplikator: 'Kurir Toko / Internal', kode_aplikator: 'TOKO', persentase_komisi: 0 },
+    ],
     // stok = { [gudang_id]: jumlah }, sama kayak pivot barang_gudang
     barang: [
-        { id: 1, jenis_barang_id: 1, nama_barang: 'Kopi Susu Botol', barcode: '8991001000101', nomer_seri: 'MNM-0001', harga_jual: 8000, satuan: 'btl', stok: { 1: 40, 2: 12 }, units: [{ level: 1, satuan: 'btl', faktor: 1, isi_info: null, harga_jual: 8000 }, { level: 2, satuan: 'dus', faktor: 24, isi_info: '1 dus = 24 btl', harga_jual: 180000 }] },
+        { id: 1, jenis_barang_id: 1, nama_barang: 'Kopi Susu Botol', barcode: '8991001000101', nomer_seri: 'MNM-0001', harga_jual: 8000, satuan: 'btl', stok: { 1: 40, 2: 12 }, units: [{ level: 1, satuan: 'btl', faktor: 1, isi_info: null, harga_jual: 8000 }, { level: 2, satuan: 'dus', faktor: 24, isi_info: '1 dus = 24 btl', harga_jual: 180000 }], harga_aplikator: { 1: 9500, 2: 9500, 3: 10000, 4: 8500 } },
         { id: 2, jenis_barang_id: 1, nama_barang: 'Teh Tarik Kotak', barcode: '8991001000202', nomer_seri: 'MNM-0002', harga_jual: 6500, satuan: 'pcs', stok: { 1: 25, 2: 8 }, units: [{ level: 1, satuan: 'pcs', faktor: 1, isi_info: null, harga_jual: 6500 }, { level: 2, satuan: 'pack', faktor: 10, isi_info: '1 pack = 10 pcs', harga_jual: 60000 }] },
         { id: 3, jenis_barang_id: 1, nama_barang: 'Air Mineral 600ml', barcode: '8991001000303', nomer_seri: 'MNM-0003', harga_jual: 4000, satuan: 'btl', stok: { 1: 100, 2: 24 }, units: [{ level: 1, satuan: 'btl', faktor: 1, isi_info: null, harga_jual: 4000 }, { level: 2, satuan: 'dus', faktor: 24, isi_info: '1 dus = 24 btl', harga_jual: 90000 }] },
         { id: 4, jenis_barang_id: 2, nama_barang: 'Indomie Goreng', barcode: '8991001000404', nomer_seri: 'MKN-0001', harga_jual: 3500, satuan: 'pcs', stok: { 1: 200, 2: 40 }, units: [{ level: 1, satuan: 'pcs', faktor: 1, isi_info: null, harga_jual: 3500 }, { level: 2, satuan: 'dus', faktor: 40, isi_info: '1 dus = 40 pcs', harga_jual: 135000 }] },
@@ -115,6 +122,10 @@ export async function getJenisBarang() {
 
 export async function getGudang() {
     return structuredClone(sumber().gudang);
+}
+
+export async function getAplikator() {
+    return structuredClone(sumber().aplikator || []);
 }
 
 /**

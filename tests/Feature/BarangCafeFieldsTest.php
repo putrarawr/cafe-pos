@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Barangs\Pages\ListBarangs;
+use App\Models\Aplikator;
 use App\Models\Barang;
 use App\Models\Gudang;
 use App\Models\JenisBarang;
@@ -252,6 +253,13 @@ class BarangCafeFieldsTest extends TestCase
         $gudang->barangs()->attach($b->id, ['stok' => 20]);
 
         // Pesanan delivery tanpa alamat (misal via kurir ojol)
+        $gofood = Aplikator::create([
+            'nama_aplikator' => 'GoFood',
+            'kode_aplikator' => 'GOFOOD',
+            'persentase_komisi' => 20.00,
+            'status_aktif' => true,
+        ]);
+
         $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
@@ -260,6 +268,7 @@ class BarangCafeFieldsTest extends TestCase
             'bayar' => 15000,
             'alamat_pengiriman' => null,
             'biaya_kirim' => 0,
+            'aplikator_id' => $gofood->id,
             'details' => [
                 [
                     'barang_id' => $b->id,

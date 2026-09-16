@@ -106,6 +106,34 @@
             <span>Kembalian</span>
             <span style="font-weight:600;color:#d4d4d8;font-variant-numeric:tabular-nums">Rp {{ number_format($record->kembalian, 0, ',', '.') }}</span>
         </div>
+
+        @if($record->aplikator)
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#71717a;margin-top:10px;padding-top:10px;border-top:1px solid #3f3f4680">
+                <span>Aplikator Delivery</span>
+                <span style="font-weight:600;color:#38bdf8">{{ $record->aplikator->nama_aplikator }}</span>
+            </div>
+        @endif
+
+        @if($record->komisi_aplikator)
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#71717a;margin-top:6px">
+                <span>Komisi Aplikator (Est.)</span>
+                <span style="font-weight:600;color:#fbbf24;font-variant-numeric:tabular-nums">Rp {{ number_format($record->komisi_aplikator, 0, ',', '.') }}</span>
+            </div>
+        @endif
+
+        @if($record->biaya_kirim > 0)
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#71717a;margin-top:6px">
+                <span>Biaya Kirim</span>
+                <span style="font-weight:600;color:#d4d4d8;font-variant-numeric:tabular-nums">Rp {{ number_format($record->biaya_kirim, 0, ',', '.') }}</span>
+            </div>
+        @endif
+
+        @if($record->alamat_pengiriman)
+            <div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;color:#71717a;margin-top:6px">
+                <span>Alamat Pengiriman</span>
+                <span style="font-weight:600;color:#d4d4d8;text-align:right">{{ $record->alamat_pengiriman }}</span>
+            </div>
+        @endif
     </div>
 
 </div>

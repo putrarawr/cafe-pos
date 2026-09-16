@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Aplikator;
 use App\Models\Barang;
+use App\Models\BarangHargaAplikator;
 use App\Models\DetailJual;
 use App\Models\Gudang;
 use App\Models\JenisBarang;
@@ -105,7 +107,7 @@ class KasirController extends Controller
                         $q->whereNull('tipe_barang')
                             ->orWhereNotIn('tipe_barang', ['kemasan', 'barang_pembantu']);
                     })
-                    ->with(['gudangs', 'kemasan'])
+                    ->with(['gudangs', 'kemasan', 'hargaAplikators'])
                     ->get()
                     ->map(fn(Barang $b) => [
                         'id' => $b->id,
@@ -126,6 +128,7 @@ class KasirController extends Controller
                         'barcode' => $b->barcode,
                         'harga_jual' => (int) $b->harga_jual,
                         'harga_beli' => (int) $b->harga_beli,
+                        'harga_aplikator' => $b->hargaAplikators->mapWithKeys(fn($h) => [(int) $h->aplikator_id => (int) $h->harga_jual]),
                         'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
                         'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
                         'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
@@ -152,6 +155,7 @@ class KasirController extends Controller
                     ]),
                 'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
                 'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
+                'aplikator' => Aplikator::aktif()->orderBy('nama_aplikator')->get(['id', 'nama_aplikator', 'kode_aplikator', 'persentase_komisi']),
                 'toko' => config('toko'),
                 'kasirList' => array_merge(
                     Karyawan::all()->pluck('nama_karyawan')->all(),
@@ -183,7 +187,7 @@ class KasirController extends Controller
                     $q->whereNull('tipe_barang')
                         ->orWhereNotIn('tipe_barang', ['kemasan', 'barang_pembantu']);
                 })
-                ->with(['gudangs', 'kemasan'])
+                ->with(['gudangs', 'kemasan', 'hargaAplikators'])
                 ->get()
                 ->map(fn(Barang $b) => [
                     'id' => $b->id,
@@ -204,6 +208,7 @@ class KasirController extends Controller
                     'barcode' => $b->barcode,
                     'harga_jual' => (int) $b->harga_jual,
                     'harga_beli' => (int) $b->harga_beli,
+                    'harga_aplikator' => $b->hargaAplikators->mapWithKeys(fn($h) => [(int) $h->aplikator_id => (int) $h->harga_jual]),
                     'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
                     'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
                     'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
@@ -229,6 +234,7 @@ class KasirController extends Controller
                 ]),
             'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
             'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
+            'aplikator' => Aplikator::aktif()->orderBy('nama_aplikator')->get(['id', 'nama_aplikator', 'kode_aplikator', 'persentase_komisi']),
             'toko' => config('toko'),
             'promoBonus' => PromoBonus::active()->get()->map(fn(PromoBonus $p) => [
                 'id' => $p->id,
@@ -309,7 +315,7 @@ class KasirController extends Controller
             }
         };
 
-        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user'])
+        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user', 'aplikator'])
             ->whereDate('tanggal', $tanggal)
             ->when($before !== null && (int) $before > 0, fn($q) => $q->where('id', '<', (int) $before))
             ->where($scope)
@@ -346,7 +352,7 @@ class KasirController extends Controller
             return response()->json(['message' => 'Password salah! Silakan coba lagi.'], 422);
         }
 
-        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user'])
+        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user', 'aplikator'])
             ->find($id);
 
         if (!$penjualan) {
@@ -376,6 +382,8 @@ class KasirController extends Controller
             'neto' => (int) $p->neto,
             'alamat_pengiriman' => $p->alamat_pengiriman ?? null,
             'biaya_kirim' => (int) $p->biaya_kirim,
+            'aplikator_id' => $p->aplikator_id ? (int) $p->aplikator_id : null,
+            'aplikator' => $p->aplikator?->nama_aplikator ?? null,
             'jenis_pembayaran' => $p->jenis_pembayaran,
             'bayar' => (int) $p->bayar,
             'kembalian' => (int) $p->kembalian,
@@ -413,6 +421,7 @@ class KasirController extends Controller
             'bayar' => ['required', 'integer', 'min:0'],
             'alamat_pengiriman' => ['nullable', 'string'],
             'biaya_kirim' => ['nullable', 'integer', 'min:0'],
+            'aplikator_id' => ['nullable', 'integer', 'exists:aplikator,id'],
             'details' => ['required', 'array', 'min:1'],
             'details.*.barang_id' => ['required', 'integer', 'exists:barang,id'],
             'details.*.jumlah' => ['required', 'integer', 'min:1'],
@@ -424,6 +433,25 @@ class KasirController extends Controller
         ]);
 
         $gudangId = $data['gudang_id'];
+
+        // ===== Pilihan aplikator WAJIB bila ada item delivery =====
+        $hasDelivery = collect($data['details'])->contains(
+            fn($d) => ($d['jenis_pesanan'] ?? 'dine_in') === 'delivery'
+        );
+        if ($hasDelivery && empty($data['aplikator_id'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Wajib pilih aplikator delivery (GoFood/GrabFood/ShopeeFood) sebelum menyimpan.',
+            ], 422);
+        }
+
+        // Ongkir & alamat hanya diterapkan bila ada item antar (delivery/take_away),
+        // selaras guard aplikator_id di atas agar ongkir tidak bocor ke transaksi non-antar.
+        $hasAntar = $hasDelivery || collect($data['details'])->contains(
+            fn($d) => ($d['jenis_pesanan'] ?? 'dine_in') === 'take_away'
+        );
+        $biayaKirimFinal = $hasAntar ? (int) ($data['biaya_kirim'] ?? 0) : 0;
+        $alamatPengirimanFinal = $hasAntar ? ($data['alamat_pengiriman'] ?? null) : null;
 
         // ===== Bulk-fetch semua Barang yang dibutuhkan dalam 1 query =====
         $allBarangIds = array_unique(array_column($data['details'], 'barang_id'));
@@ -503,7 +531,7 @@ class KasirController extends Controller
             }
         }
 
-        $penjualan = DB::transaction(function () use ($data, $barangs, $gudangId, &$bonusPool, $promos, $promoByMainBarang) {
+        $penjualan = DB::transaction(function () use ($data, $barangs, $gudangId, $hasDelivery, $biayaKirimFinal, $alamatPengirimanFinal, &$bonusPool, $promos, $promoByMainBarang) {
             // ===== Bulk-fetch semua stok sebelum loop (1 query) =====
             $stockRows = DB::table('barang_gudang')
                 ->where('gudang_id', $gudangId)
@@ -517,6 +545,20 @@ class KasirController extends Controller
                 ->whereIn('id', $barangs->keys()->all())
                 ->get()
                 ->keyBy('id');
+
+            // ===== Harga khusus per aplikator delivery (dari master barang) =====
+            $hargaAplikatorMap = [];
+            $komisiPersen = 0;
+            if ($hasDelivery && !empty($data['aplikator_id'])) {
+                $aplikator = Aplikator::find((int) $data['aplikator_id']);
+                $komisiPersen = $aplikator ? (float) $aplikator->persentase_komisi : 0;
+                $hargaAplikatorMap = BarangHargaAplikator::where('aplikator_id', (int) $data['aplikator_id'])
+                    ->whereIn('barang_id', $barangs->keys()->all())
+                    ->get()
+                    ->pluck('harga_jual', 'barang_id')
+                    ->map(fn($h) => (int) $h)
+                    ->all();
+            }
 
             // total & harga dihitung ulang di server (jangan percaya angka dari browser)
             $total = 0;
@@ -552,8 +594,17 @@ class KasirController extends Controller
                         abort(422, "Stok {$barang->nama_barang} di gudang ini tidak cukup (tersedia: {$stokSekarang} {$barang->satuan})");
                     }
 
-                    $hargaNormal = $barang->getHargaJualForSatuan($satuan);
-                    $hargaTier = $barang->getHargaTierForQty((int) $d['jumlah'], $satuan);
+                    $isDelivery = ($d['jenis_pesanan'] ?? 'dine_in') === 'delivery';
+                    $hargaAplikatorSatuan = $isDelivery ? ($hargaAplikatorMap[$d['barang_id']] ?? null) : null;
+                    if ($hargaAplikatorSatuan !== null) {
+                        // Harga khusus per aplikator: master berisi harga untuk Level 1,
+                        // skala ke satuan yang dipilih (sama seperti getHargaJualForSatuan).
+                        $hargaNormal = $hargaAplikatorSatuan * $faktor;
+                        $hargaTier = $barang->getHargaTierForQty((int) $d['jumlah'], $satuan, $hargaNormal);
+                    } else {
+                        $hargaNormal = $barang->getHargaJualForSatuan($satuan);
+                        $hargaTier = $barang->getHargaTierForQty((int) $d['jumlah'], $satuan);
+                    }
                     $potonganTier = max(0, ($hargaNormal - $hargaTier) * (int) $d['jumlah']);
                     $diskonItem = $potonganTier;
                     $hargaSatuan = $hargaNormal;
@@ -603,12 +654,17 @@ class KasirController extends Controller
             $userId = Auth::guard('web')->check() ? Auth::guard('web')->id() : null;
 
             // Tambahkan biaya kirim ke neto untuk perhitungan pembayaran
-            $netoWithKirim = $neto + (int) ($data['biaya_kirim'] ?? 0);
+            $netoWithKirim = $neto + $biayaKirimFinal;
 
             if ($data['jenis_pembayaran'] === 'tunai' && $data['bayar'] < $netoWithKirim) {
                 abort(422, 'Uang bayar kurang dari total');
             }
             $bayarFinal = $data['jenis_pembayaran'] === 'tunai' ? $data['bayar'] : $netoWithKirim;
+
+            // Komisi aplikator (laporan) = persentase_komisi dari neto (sebelum biaya kirim)
+            $komisiAplikator = $hasDelivery && !empty($data['aplikator_id']) && $komisiPersen > 0
+                ? (int) round($neto * $komisiPersen / 100)
+                : null;
 
             $penjualan = Penjualan::create([
                 'nomer_nota' => $nomerNota,
@@ -622,8 +678,10 @@ class KasirController extends Controller
                 'jenis_pembayaran' => $data['jenis_pembayaran'],
                 'bayar' => $bayarFinal,
                 'kembalian' => max(0, $bayarFinal - $netoWithKirim),
-                'alamat_pengiriman' => $data['alamat_pengiriman'] ?? null,
-                'biaya_kirim' => (int) ($data['biaya_kirim'] ?? 0),
+                'alamat_pengiriman' => $alamatPengirimanFinal,
+                'biaya_kirim' => $biayaKirimFinal,
+                'aplikator_id' => $hasDelivery ? ($data['aplikator_id'] ?? null) : null,
+                'komisi_aplikator' => $komisiAplikator,
             ]);
 
             // ===== Bulk-insert DetailJual (1 query alih-alih N) =====

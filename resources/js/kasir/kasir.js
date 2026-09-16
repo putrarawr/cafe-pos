@@ -11,6 +11,7 @@ import {
     getKemasanDefault,
     getJenisBarang,
     getGudang,
+    getAplikator,
     getRiwayat,
     simpanPenjualan,
     verifikasiCetakUlang,
@@ -26,6 +27,7 @@ const state = {
     pakaiKemasan: true,
     jenisBarang: [],
     gudang: [],
+    aplikator: [],
     // keranjang: [{ barang_id, nama_barang, satuan, harga, harga_asli, jumlah, diskon, jenis_pesanan, is_kemasan }]
     // harga_asli = harga normal per satuan, diskon = potongan rupiah dari harga bertingkat
     cart: [],
@@ -40,6 +42,7 @@ const state = {
     paymentExpanded: true,
     alamatPengiriman: '',
     biayaKirim: 0,
+    aplikatorId: null,
     jenisPesanan: 'dine_in',
 };
 
@@ -52,6 +55,14 @@ function scheduleRenderProduk() {
 }
 
 const TOKO_DEFAULT = { nama: 'Toko PKL', alamat: '', kontak: '' };
+
+// Logo aplikator delivery (dari kode_aplikator). Tidak ada entri = tampil teks biasa.
+const LOGO_APLIKATOR = {
+    GOFOOD: '/img/aplikator/gofood.svg',
+    GRABFOOD: '/img/aplikator/grabfood.png',
+    SHOPEEFOOD: '/img/aplikator/shopeefood.png',
+    MAXIM: '/img/aplikator/maxim.png',
+};
 
 /**
  * Generates multi-tier unit options (Pcs, Pack, Dus, Slop, Bal, Bag, Karung) and wholesale prices for every item
@@ -151,6 +162,9 @@ function getCartProductGroups() {
                 nama_barang: item.nama_barang,
                 harga: item.harga,
                 harga_asli: item.harga_asli ?? item.harga,
+                hargaDineIn: null,
+                hargaTakeAway: null,
+                hargaDelivery: null,
                 satuan: item.satuan,
                 barang: barang,
                 dine_in_qty: 0,
@@ -163,9 +177,16 @@ function getCartProductGroups() {
 
         const grp = groupMap.get(bId);
         const tipe = item.jenis_pesanan || 'dine_in';
-        if (tipe === 'dine_in') grp.dine_in_qty += item.jumlah;
-        else if (tipe === 'take_away') grp.take_away_qty += item.jumlah;
-        else if (tipe === 'delivery') grp.delivery_qty += item.jumlah;
+        if (tipe === 'dine_in') {
+            grp.dine_in_qty += item.jumlah;
+            grp.hargaDineIn = item.harga;
+        } else if (tipe === 'take_away') {
+            grp.take_away_qty += item.jumlah;
+            grp.hargaTakeAway = item.harga;
+        } else if (tipe === 'delivery') {
+            grp.delivery_qty += item.jumlah;
+            grp.hargaDelivery = item.harga;
+        }
 
         grp.totalQty += item.jumlah;
         grp.totalDiskon += (item.diskon || 0) * item.jumlah;
@@ -310,6 +331,7 @@ function setJenisPesananGlobal(tipe) {
     if (tipe !== 'delivery' && !state.cart.some((i) => i.jenis_pesanan === 'delivery')) {
         state.alamatPengiriman = '';
         state.biayaKirim = 0;
+        state.aplikatorId = null;
     }
 
     if (tipe === 'dine_in') {
@@ -338,6 +360,7 @@ let pendingHapusId = null;
 let pendingNontunaiPayload = null;
 let pendingDiskonPayload = null;
 const DISKON_BESAR_PERSEN = 30;
+const AMBANG_STOK_MENIPIS = 5;
 const collapsedOrderGroups = new Set();
 
 function mintaHapusItem(key) {
@@ -391,6 +414,7 @@ function resetTransaksi() {
     state.bankTransfer = 'BCA';
     state.alamatPengiriman = '';
     state.biayaKirim = 0;
+    state.aplikatorId = null;
     state.jenisPesanan = 'dine_in';
     collapsedOrderGroups.clear();
     bonusToastShown.clear();
@@ -431,6 +455,12 @@ async function prosesBayar() {
     }
     if (!state.gudangId) {
         toast('Pilih gudang dulu', true);
+        return;
+    }
+    // Pilihan aplikator WAJIB bila ada item delivery.
+    if (state.cart.some((i) => i.jenis_pesanan === 'delivery' && i.jumlah > 0) && !state.aplikatorId) {
+        toast('Wajib pilih aplikator delivery (GoFood/GrabFood/ShopeeFood) dulu', true);
+        document.querySelector('[data-aplikator-picker]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         return;
     }
     // Alamat pengiriman sekarang opsional (bisa dikosongkan jika via ojol / pihak ketiga)
@@ -484,6 +514,7 @@ function buildPayload() {
         kembalian: nominalKembalian,
         alamat_pengiriman: state.alamatPengiriman || null,
         biaya_kirim: state.biayaKirim || 0,
+        aplikator_id: state.aplikatorId,
         details: state.cart.map((i) => ({
             barang_id: i.barang_id,
             nama_barang: i.nama_barang,
@@ -774,10 +805,20 @@ function tampilkanStruk(payload) {
         const biayaKirimVal = Number(payload.biaya_kirim || 0);
         const netoSebelumKirim = Math.max(0, (payload.neto || 0) - biayaKirimVal);
 
-        const isDelivery = biayaKirimVal > 0 || !!payload.alamat_pengiriman || payload.details?.some((d) => d.jenis_pesanan === 'delivery');
-        const deliveryHeaderHtml = isDelivery
+        const dets = payload.details || [];
+        const hasDeliveryTipe = dets.some((d) => d.jenis_pesanan === 'delivery');
+        const hasTakeAwayTipe = dets.some((d) => d.jenis_pesanan === 'take_away');
+        const isAntar = biayaKirimVal > 0 || !!payload.alamat_pengiriman || hasDeliveryTipe || hasTakeAwayTipe;
+        const labelAntar = hasDeliveryTipe
+            ? 'PESANAN DELIVERY'
+            : (hasTakeAwayTipe ? 'PESANAN TAKE AWAY' : 'PESANAN ANTAR');
+        const namaAplikator = payload.aplikator
+            ?? state.aplikator.find((a) => Number(a.id) === Number(payload.aplikator_id))?.nama_aplikator
+            ?? null;
+        const deliveryHeaderHtml = isAntar
             ? `<div class="mt-1.5 pt-1.5 border-t border-dotted border-zinc-400 text-center">
-                <p class="text-xs font-bold text-zinc-900 tracking-wide uppercase">[PESANAN DELIVERY]</p>
+                <p class="text-xs font-bold text-zinc-900 tracking-wide uppercase">[${labelAntar}]</p>
+                ${namaAplikator ? `<p class="text-xs text-zinc-700 font-normal mt-0.5"><span class="font-semibold">Via:</span> ${escapeHtml(namaAplikator)}</p>` : ''}
                 ${payload.alamat_pengiriman ? `<p class="text-xs text-zinc-700 font-normal mt-0.5"><span class="font-semibold">Alamat:</span> ${escapeHtml(payload.alamat_pengiriman)}</p>` : ''}
                </div>`
             : '';
@@ -934,10 +975,29 @@ function templateRiwayatItem(r) {
     const labelBayar = r.jenis_pembayaran === 'transfer'
         ? 'Transfer'
         : r.jenis_pembayaran?.toUpperCase() ?? '-';
+
+    const tipeSet = new Set(
+        (r.details || [])
+            .filter((d) => !d.is_bonus)
+            .map((d) => d.jenis_pesanan || 'dine_in')
+    );
+    const hasDeliveryTipe = tipeSet.has('delivery');
+    const hasTakeAwayTipe = tipeSet.has('take_away');
+    const chipAntar = hasDeliveryTipe
+        ? `<span class="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-orange-100 text-orange-700">DELIVERY${r.aplikator ? ` · ${escapeHtml(r.aplikator)}` : ''}</span>`
+        : (hasTakeAwayTipe
+            ? `<span class="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-700">TAKE AWAY</span>`
+            : '');
+    const chipOngkir = Number(r.biaya_kirim || 0) > 0
+        ? `<span class="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-700">Ongkir ${rupiah(Number(r.biaya_kirim))}</span>`
+        : '';
+    const chips = [chipAntar, chipOngkir].filter(Boolean).join('');
+
     return `<div class="flex items-center justify-between gap-3 py-3 px-2">
         <div class="min-w-0">
             <p class="text-sm font-bold text-zinc-900 truncate">${escapeHtml(r.nomer_nota)}</p>
-            <p class="text-[11px] text-zinc-500 mt-0.5">
+            <p class="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                ${chips ? `<span class="flex items-center gap-1.5">${chips}</span>` : ''}
                 ${escapeHtml(r.jam)} · ${escapeHtml(r.nama_kasir)} · ${r.jumlah_item} item · ${escapeHtml(r.gudang)}
             </p>
         </div>
@@ -1177,6 +1237,8 @@ function cetakUlangRiwayat(r) {
         neto: r.neto,
         alamat_pengiriman: r.alamat_pengiriman ?? null,
         biaya_kirim: r.biaya_kirim ?? 0,
+        aplikator_id: r.aplikator_id ?? null,
+        aplikator: r.aplikator ?? null,
         subtotal_normal: r.details.reduce((s, d) => s + Number(d.harga || 0) * Number(d.jumlah || 0), 0),
         potongan_barang: r.details.reduce((s, d) => s + Number(d.diskon || 0), 0),
         jenis_pembayaran: r.jenis_pembayaran,
@@ -1285,7 +1347,7 @@ function renderProduk() {
             const stok = stokTersedia(b);
             const isHabisStatus = b.status === 'habis';
             const habis = isHabisStatus || stok <= 0;
-            const menipis = !habis && stok <= 5;
+            const menipis = !habis && stok <= AMBANG_STOK_MENIPIS;
             const sorot = highlightedIdx === idx ? 'ring-2 ring-zinc-900 shadow-lg shadow-zinc-900/15' : '';
             const sorotCart = cartSelId === b.id;
             const kelasRing = sorot || (sorotCart ? 'ring-2 ring-zinc-900' : '');
@@ -1482,7 +1544,17 @@ function updateCartTierPrices() {
 
         const units = getUnitsForBarang(barang);
         const unitObj = units.find((u) => u.satuan === i.satuan) ?? units[0];
-        const basePrice = unitObj ? unitObj.harga_jual : Number(barang.harga_jual || 0);
+        let basePrice = unitObj ? unitObj.harga_jual : Number(barang.harga_jual || 0);
+
+        // Harga khusus per aplikator delivery: master barang_harga_aplikator berisi
+        // harga Level 1, diskalakan ke satuan terpilih (fallback harga normal bila
+        // aplikator/master tidak tersedia).
+        if (i.jenis_pesanan === 'delivery' && state.aplikatorId) {
+            const hargaApl = (barang.harga_aplikator || {})[Number(state.aplikatorId)];
+            if (hargaApl) {
+                basePrice = Number(hargaApl) * (unitObj ? Number(unitObj.faktor || 1) : 1);
+            }
+        }
 
         i.harga_asli = basePrice;
 
@@ -1553,13 +1625,29 @@ function getProductIconHtml(barang) {
 }
 
 function buildProductCard(grp) {
-    const { barang_id, nama_barang, harga, satuan, barang, totalQty, dine_in_qty, take_away_qty, delivery_qty } = grp;
+    const { barang_id, nama_barang, harga, satuan, barang, totalQty, dine_in_qty, take_away_qty, delivery_qty, hargaDineIn, hargaTakeAway, hargaDelivery } = grp;
 
     const qtyDineIn = dine_in_qty || 0;
     const qtyTakeAway = take_away_qty || 0;
     const qtyDelivery = delivery_qty || 0;
 
+    const hargaTipe = (qty, hargaX) => (qty > 0 && Number(hargaX ?? 0) > 0
+        ? `<span class="text-[11px] font-bold text-sky-600 tabular-nums">${rupiah(hargaX)}</span>`
+        : '');
+
     const iconHtml = getProductIconHtml(barang);
+
+    // Nota tarif aplikator per item delivery (harga bisa berbeda dari harga normal)
+    const aplikatorAktif = Number(state.aplikatorId) > 0
+        ? state.aplikator.find((a) => Number(a.id) === Number(state.aplikatorId))
+        : null;
+    const deliveryNote = (qtyDelivery > 0 && aplikatorAktif && barang.harga_aplikator && barang.harga_aplikator[state.aplikatorId])
+        ? (() => {
+            const perSatuan = Number(barang.harga_aplikator[state.aplikatorId])
+                * (getUnitsForBarang(barang).find((u) => u.satuan === satuan)?.faktor ?? 1);
+            return `<p class="text-[10px] font-semibold text-amber-600 flex items-center gap-1 mt-1.5">${escapeHtml(aplikatorAktif.nama_aplikator)} · ${rupiah(perSatuan)}/${satuan || 'Pcs'}</p>`;
+        })()
+        : '';
 
     return `<div data-product-card="${barang_id}" class="bg-white border border-zinc-200/90 rounded-2xl p-3.5 space-y-3 shadow-xs hover:border-zinc-300 transition-all">
         <!-- Header Item: Icon + Nama + Harga & Total -->
@@ -1587,6 +1675,7 @@ function buildProductCard(grp) {
                         <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
                     </svg>
                     <span class="text-xs font-medium text-zinc-700">Dine in</span>
+                    ${hargaTipe(qtyDineIn, hargaDineIn)}
                 </div>
                 <div class="flex items-center gap-2">
                     <button type="button" data-btn-minus-type="${barang_id}" data-type="dine_in"
@@ -1606,6 +1695,7 @@ function buildProductCard(grp) {
                         <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
                     </svg>
                     <span class="text-xs font-medium text-zinc-700">Take away</span>
+                    ${hargaTipe(qtyTakeAway, hargaTakeAway)}
                 </div>
                 <div class="flex items-center gap-2">
                     <button type="button" data-btn-minus-type="${barang_id}" data-type="take_away"
@@ -1625,6 +1715,7 @@ function buildProductCard(grp) {
                         <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
                     </svg>
                     <span class="text-xs font-medium text-zinc-700">Delivery</span>
+                    ${hargaTipe(qtyDelivery, hargaDelivery)}
                 </div>
                 <div class="flex items-center gap-2">
                     <button type="button" data-btn-minus-type="${barang_id}" data-type="delivery"
@@ -1636,6 +1727,7 @@ function buildProductCard(grp) {
                         title="Tambah Delivery">+</button>
                 </div>
             </div>
+            ${deliveryNote}
         </div>
     </div>`;
 }
@@ -1670,8 +1762,67 @@ function renderCart() {
         const productGroups = getCartProductGroups();
         const cardsHtml = productGroups.map((grp) => buildProductCard(grp)).join('');
 
-        const hasDelivery = state.cart.some((i) => (i.jenis_pesanan === 'delivery' || i.jenis_pesanan === 'take_away') && i.jumlah > 0);
-        const deliveryFields = hasDelivery
+        const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery' && i.jumlah > 0);
+        const hasTAorDel = state.cart.some((i) => (i.jenis_pesanan === 'delivery' || i.jenis_pesanan === 'take_away') && i.jumlah > 0);
+
+        // Pilihan aplikator delivery muncul & WAJIB Jika ada item delivery
+        if (!hasDelivery && state.aplikatorId !== null) {
+            state.aplikatorId = null;
+        }
+
+        // Onkir & alamat hanya bermakna bila ada item antar (delivery/take_away).
+        // Direset di satu titik ini agar mencakup semua jalur hapus item.
+        if (!hasTAorDel && (state.alamatPengiriman !== '' || state.biayaKirim !== 0)) {
+            state.alamatPengiriman = '';
+            state.biayaKirim = 0;
+        }
+
+        const aplikatorPicker = hasDelivery ? `
+            <div data-aplikator-picker class="rounded-2xl border border-zinc-200 bg-zinc-50 p-3.5 space-y-2.5 mt-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-700 flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
+                        </svg>
+                        Aplikator Delivery
+                    </span>
+                    <span class="text-[10px] font-bold text-red-600 uppercase tracking-wide ${state.aplikatorId ? 'opacity-40' : ''}">Wajib</span>
+                </div>
+                ${state.aplikator.length === 0 ? `
+                    <div class="rounded-xl border-2 border-dashed border-red-200 bg-red-50 px-3 py-2.5 text-center">
+                        <p class="text-[10px] font-bold text-red-600">Belum ada aplikator aktif.</p>
+                        <p class="text-[10px] text-red-400 mt-0.5">Tambahkan lewat master Barang → Harga Delivery / Aplikator Online sebelum melayani delivery.</p>
+                    </div>
+                ` : `
+                <div class="grid grid-cols-2 gap-1.5">
+                    ${state.aplikator.map((a) => {
+                        const selected = Number(state.aplikatorId) === Number(a.id);
+                        const logo = LOGO_APLIKATOR[(a.kode_aplikator || '').toUpperCase()];
+                        if (logo) {
+                            return `<button type="button" data-aplikator-option="${a.id}" title="${escapeHtml(a.nama_aplikator)}" aria-label="${escapeHtml(a.nama_aplikator)}"
+                                class="flex items-center justify-center h-14 px-2 rounded-xl border transition-all cursor-pointer select-none bg-white
+                                    ${selected
+                                        ? 'border-zinc-900 ring-2 ring-zinc-900 shadow-xs bg-zinc-50'
+                                        : 'border-zinc-200 hover:border-zinc-400'}">
+                                <img src="${logo}" alt="${escapeHtml(a.nama_aplikator)}" class="h-9 w-auto object-contain select-none pointer-events-none">
+                            </button>`;
+                        }
+                        return `<button type="button" data-aplikator-option="${a.id}" title="${escapeHtml(a.nama_aplikator)}"
+                            class="flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-2 rounded-xl border transition-all cursor-pointer select-none text-center leading-tight
+                                ${selected
+                                    ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
+                                    : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400 hover:text-zinc-900'}">
+                            ${selected ? '<svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>' : ''}
+                            <span>${escapeHtml(a.nama_aplikator)}</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+                ${!state.aplikatorId ? '<p class="text-[10px] text-zinc-500">Pilih salah satu aplikator untuk melanjutkan pembayaran.</p>' : ''}
+                `}
+            </div>`
+            : '';
+
+        const deliveryFields = hasTAorDel
             ? `<div class="rounded-2xl border border-zinc-200 bg-zinc-50 p-3.5 space-y-2.5 mt-3">
                 <div>
                     <label for="input-alamat-pengiriman" class="block text-xs font-bold text-zinc-700 mb-1">Alamat Pengiriman <span class="text-zinc-400 font-normal">(Opsional / Kosongkan jika via Ojol)</span></label>
@@ -1684,7 +1835,7 @@ function renderCart() {
             </div>`
             : '';
 
-        wrap.innerHTML = cardsHtml + deliveryFields;
+        wrap.innerHTML = cardsHtml + aplikatorPicker + deliveryFields;
     }
 
     const badge = document.getElementById('badge-cart-count');
@@ -1729,6 +1880,33 @@ function renderCart() {
     const lblBiayaKirim = document.getElementById('lbl-biaya-kirim');
     if (rowBiayaKirim) rowBiayaKirim.classList.toggle('hidden', !hasDelivery || !state.biayaKirim);
     if (lblBiayaKirim) lblBiayaKirim.textContent = rupiah(state.biayaKirim || 0);
+
+    // Ringkasan komisi aplikator & estimasi bersih (internal, tidak ikut struk).
+    // Komisi dihitung dari neto SEBELUM biaya kirim — sama persis rumus backend.
+    const hasDeliveryReal = state.cart.some((i) => i.jenis_pesanan === 'delivery' && i.jumlah > 0);
+    const aplTerpilih = hasDeliveryReal
+        ? state.aplikator.find((a) => Number(a.id) === Number(state.aplikatorId))
+        : null;
+    const netoBarang = Math.max(0, totalKotor() - nominalDiskon());
+    const komisiApl = aplTerpilih && Number(aplTerpilih.persentase_komisi) > 0
+        ? Math.round(netoBarang * Number(aplTerpilih.persentase_komisi) / 100)
+        : 0;
+    const rowKomisi = document.getElementById('row-komisi-aplikator');
+    const lblKomisiLabel = document.getElementById('lbl-komisi-aplikator-label');
+    const lblKomisi = document.getElementById('lbl-komisi-aplikator');
+    const rowEstBersih = document.getElementById('row-est-bersih');
+    const lblEstBersih = document.getElementById('lbl-est-bersih');
+    if (rowKomisi && lblKomisi) {
+        rowKomisi.classList.toggle('hidden', !aplTerpilih || komisiApl <= 0);
+        if (aplTerpilih && komisiApl > 0) {
+            if (lblKomisiLabel) lblKomisiLabel.textContent = `Komisi Aplikator (${escapeHtml(aplTerpilih.nama_aplikator)} ${aplTerpilih.persentase_komisi}%)`;
+            lblKomisi.textContent = `- ${rupiah(komisiApl)}`;
+        }
+    }
+    if (rowEstBersih && lblEstBersih) {
+        rowEstBersih.classList.toggle('hidden', !aplTerpilih);
+        if (aplTerpilih) lblEstBersih.textContent = rupiah(Math.max(0, netoBarang - komisiApl));
+    }
 
     const potonganNota = nominalDiskon();
     const rowDiskonNota = document.getElementById('row-diskon-nota');
@@ -1789,6 +1967,45 @@ function renderCart() {
 
     renderPaymentMethodPills();
     renderTipePicker();
+}
+
+/**
+ * Perbarui ringkasan neto/total tanpa merender ulang keranjang (dipakai saat
+ * mengetik Biaya Kirim agar fokus input tidak hilang di tengah input).
+ */
+function updateRingkasanNeto() {
+    const neto = totalNeto();
+
+    const lblBiayaKirim = document.getElementById('lbl-biaya-kirim');
+    const rowBiayaKirim = document.getElementById('row-biaya-kirim');
+    if (lblBiayaKirim) lblBiayaKirim.textContent = rupiah(state.biayaKirim || 0);
+    if (rowBiayaKirim) rowBiayaKirim.classList.toggle('hidden', !state.biayaKirim);
+
+    const lblNeto = document.getElementById('lbl-neto');
+    if (lblNeto) {
+        lblNeto.textContent = rupiah(neto);
+    }
+
+    const btnBayar = document.getElementById('btn-bayar');
+    if (btnBayar && !btnBayar.dataset.saving) {
+        btnBayar.textContent = state.cart.length ? `Bayar · ${rupiah(neto)}` : 'Bayar';
+    }
+
+    const btnUangPas = document.getElementById('btn-uang-pas');
+    if (btnUangPas) {
+        btnUangPas.innerHTML = `<span class="block leading-tight">Uang pas</span><span class="block text-[10px] font-normal text-zinc-500 mt-0.5">${rupiah(neto)}</span>`;
+        btnUangPas.title = `Set uang bayar pas ${rupiah(neto)}`;
+    }
+
+    const lblKembalian = document.getElementById('lbl-kembalian');
+    if (lblKembalian && state.jenisPembayaran === 'tunai') {
+        const kurang = state.bayar > 0 && state.bayar < neto;
+        lblKembalian.textContent = kurang
+            ? `Kurang ${rupiah(neto - state.bayar)}`
+            : `Kembalian ${rupiah(kembalian())}`;
+        lblKembalian.classList.toggle('text-red-600', kurang);
+        lblKembalian.classList.toggle('text-emerald-600', !kurang && state.bayar > 0);
+    }
 }
 
 function renderTipePicker() {
@@ -2303,12 +2520,13 @@ function renderPaymentMethodPills() {
 // ------------------------- INIT -------------------------
 
 async function init() {
-    const [barang, jenis, gudang, kemasan, kemasanDefault] = await Promise.all([
+    const [barang, jenis, gudang, kemasan, kemasanDefault, aplikator] = await Promise.all([
         getBarang(),
         getJenisBarang(),
         getGudang(),
         getBarangKemasan(),
         getKemasanDefault(),
+        getAplikator(),
     ]);
     state.barang = barang;
     state.barangKemasan = kemasan || [];
@@ -2316,6 +2534,7 @@ async function init() {
     state.pakaiKemasan = true;
     state.jenisBarang = jenis;
     state.gudang = gudang;
+    state.aplikator = aplikator || [];
     state.gudangId = gudang[0]?.id ?? null;
 
     let pendingGudangId = null;
@@ -2361,25 +2580,6 @@ async function init() {
     // Saklar Toggle Kemasan
     document.getElementById('btn-kemasan-pakai')?.addEventListener('click', () => toggleKemasan(true));
     document.getElementById('btn-kemasan-tanpa')?.addEventListener('click', () => toggleKemasan(false));
-
-    // Input Alamat & Biaya Kirim Delivery
-    const deliveryAlamatEl = document.getElementById('delivery-alamat');
-    if (deliveryAlamatEl) {
-        deliveryAlamatEl.addEventListener('input', (e) => {
-            state.alamatPengiriman = e.target.value;
-        });
-    }
-
-    const deliveryOngkirEl = document.getElementById('delivery-ongkir');
-    if (deliveryOngkirEl) {
-        deliveryOngkirEl.addEventListener('input', (e) => {
-            const raw = e.target.value.replace(/\D/g, '');
-            const val = raw ? Number(raw) : 0;
-            state.biayaKirim = val;
-            e.target.value = val > 0 ? val.toLocaleString('id-ID') : '';
-            renderCart();
-        });
-    }
 
     // Modal Konfirmasi Gudang
     document.getElementById('btn-batal-gudang')?.addEventListener('click', () => {
@@ -2653,6 +2853,14 @@ async function init() {
                 return;
             }
 
+            const aplikatorOpt = e.target.closest('[data-aplikator-option]');
+            if (aplikatorOpt) {
+                state.aplikatorId = Number(aplikatorOpt.dataset.aplikatorOption);
+                updateCartTierPrices();
+                renderCart();
+                return;
+            }
+
             const plus = e.target.closest('[data-plus]');
             const minus = e.target.closest('[data-minus]');
             const del = e.target.closest('[data-del]');
@@ -2706,6 +2914,22 @@ async function init() {
         });
 
         cartItems.addEventListener('input', (e) => {
+            const alamat = e.target.closest('#input-alamat-pengiriman');
+            if (alamat) {
+                state.alamatPengiriman = alamat.value;
+                return;
+            }
+
+            const ongkir = e.target.closest('#input-biaya-kirim');
+            if (ongkir) {
+                const raw = ongkir.value.replace(/\D/g, '');
+                const val = raw ? Number(raw) : 0;
+                ongkir.value = val > 0 ? val.toLocaleString('id-ID') : '';
+                state.biayaKirim = val;
+                updateRingkasanNeto();
+                return;
+            }
+
             const qty = e.target.closest('[data-qty]');
             if (!qty) return;
             const qtyKey = qty.dataset.qty;
@@ -2869,6 +3093,8 @@ async function init() {
             diskon: nominalDiskon(),
             neto: totalNeto(),
             biaya_kirim: state.biayaKirim || 0,
+            aplikator_id: state.aplikatorId,
+            aplikator: state.aplikator.find((a) => Number(a.id) === Number(state.aplikatorId))?.nama_aplikator ?? null,
             subtotal_normal: totalNormal(),
             potongan_barang: totalPotonganBarang(),
             jenis_pembayaran: state.jenisPembayaran,
@@ -2948,6 +3174,44 @@ async function init() {
     });
     document.getElementById('btn-tutup-struk')?.addEventListener('click', tutupModalStruk);
     document.getElementById('btn-print-struk')?.addEventListener('click', () => window.print());
+
+    // ------------------------- LEBAR STRUK (58/80mm) -------------------------
+    const strukLebarKey = 'kasir.strukLebar';
+    let strukLebar = localStorage.getItem(strukLebarKey);
+    if (strukLebar !== '58' && strukLebar !== '80') strukLebar = '80';
+
+    function sorotTombolLebar() {
+        document.querySelectorAll('[data-choice-struk-lebar]').forEach((b) => {
+            const on = b.dataset.choiceStrukLebar === strukLebar;
+            b.classList.toggle('bg-white', on);
+            b.classList.toggle('shadow-sm', on);
+            b.classList.toggle('text-zinc-900', on);
+            b.classList.toggle('text-zinc-600', !on);
+        });
+    }
+
+    function terapkanStrukLebar() {
+        const modal = document.getElementById('modal-struk');
+        if (modal) modal.dataset.strukLebar = strukLebar;
+        sorotTombolLebar();
+
+        let st = document.getElementById('struk-page-size');
+        if (!st) {
+            st = document.createElement('style');
+            st.id = 'struk-page-size';
+            document.head.appendChild(st);
+        }
+        st.textContent = `@page { size: ${strukLebar}mm auto; margin: 0; }`;
+    }
+
+    document.querySelectorAll('[data-choice-struk-lebar]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            strukLebar = btn.dataset.choiceStrukLebar;
+            localStorage.setItem(strukLebarKey, strukLebar);
+            terapkanStrukLebar();
+        });
+    });
+    terapkanStrukLebar();
 
     // ------------------------- SHORTCUT -------------------------
     const modalPanduan = document.getElementById('modal-panduan-shortcut');

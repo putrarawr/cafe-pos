@@ -56,6 +56,12 @@ class PenjualansTable
                         default => 'gray',
                     }),
 
+                TextColumn::make('aplikator.nama_aplikator')
+                    ->label('Aplikator')
+                    ->badge()
+                    ->color('info')
+                    ->placeholder('—'),
+
                 TextColumn::make('created_at')
                     ->label('Waktu Transaksi')
                     ->dateTime('d M Y H:i')
@@ -82,6 +88,10 @@ class PenjualansTable
                 SelectFilter::make('karyawan_id')
                     ->label('Kasir / Karyawan')
                     ->relationship('karyawan', 'nama_karyawan'),
+
+                SelectFilter::make('aplikator_id')
+                    ->label('Aplikator')
+                    ->relationship('aplikator', 'nama_aplikator'),
             ])
             ->recordActions([
                 Action::make('view_detail')
@@ -89,7 +99,7 @@ class PenjualansTable
                     ->modalHeading(fn (Penjualan $record) => "Detail Penjualan #{$record->nomer_nota}")
                     ->modalContent(fn (Penjualan $record): View => view(
                         'filament.resources.penjualan.detail-modal',
-                        ['record' => $record->load('details.barang', 'karyawan', 'user', 'gudang')]
+                        ['record' => $record->load('details.barang', 'karyawan', 'user', 'gudang', 'aplikator')]
                     ))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup'),

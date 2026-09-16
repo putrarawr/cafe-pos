@@ -34,7 +34,7 @@ class AplikatorSeeder extends Seeder
             [
                 'nama_aplikator' => 'Maxim Food',
                 'kode_aplikator' => 'MAXIM',
-                'persentase_komisi' => 15.00,
+                'persentase_komisi' => 20.00,
                 'status_aktif' => true,
                 'keterangan' => 'Aplikator delivery Maxim Foods & Goods',
             ],

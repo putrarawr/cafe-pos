@@ -54,7 +54,9 @@
             #modal-struk, #modal-struk * { visibility: visible; }
             #modal-struk { position: absolute; inset: 0; background: white; overflow: visible; max-height: none; }
             #modal-struk > div { max-height: none !important; overflow: visible !important; box-shadow: none !important; }
-            #struk-actions { display: none !important; }
+            #modal-struk[data-struk-lebar="58"] { width: 58mm !important; }
+            #modal-struk[data-struk-lebar="80"] { width: 80mm !important; }
+            #struk-actions, #struk-lebar-picker { display: none !important; }
         }
     </style>
 </head>
@@ -337,6 +339,14 @@
                             <span class="text-zinc-500 font-medium">Biaya Kirim</span>
                             <span id="lbl-biaya-kirim" class="font-bold text-zinc-900 tabular-nums">Rp 0</span>
                         </div>
+                        <div id="row-komisi-aplikator" class="hidden flex justify-between items-center">
+                            <span id="lbl-komisi-aplikator-label" class="text-zinc-500 font-medium">Komisi Aplikator</span>
+                            <span id="lbl-komisi-aplikator" class="font-bold text-red-600 tabular-nums">- Rp 0</span>
+                        </div>
+                        <div id="row-est-bersih" class="hidden flex justify-between items-center">
+                            <span class="text-zinc-500 font-medium">Est. Bersih</span>
+                            <span id="lbl-est-bersih" class="font-bold text-emerald-600 tabular-nums">Rp 0</span>
+                        </div>
                         <div class="border-t border-zinc-200/80 pt-2 mt-1.5 flex justify-between items-baseline">
                             <span class="font-bold text-zinc-900 text-base">Total</span>
                             <span id="lbl-neto" class="inline-block origin-right text-xl font-black tracking-tight text-zinc-900 tabular-nums">Rp 0</span>
@@ -444,10 +454,19 @@
     </button>
 
     {{-- MODAL STRUK --}}
-    <div id="modal-struk" role="dialog" aria-modal="true" aria-label="Struk pembelian" class="hidden anim-backdrop fixed inset-0 bg-zinc-950/50 backdrop-blur-xs flex items-center justify-center z-40 p-4">
+    <div id="modal-struk" data-struk-lebar="80" role="dialog" aria-modal="true" aria-label="Struk pembelian" class="hidden anim-backdrop fixed inset-0 bg-zinc-950/50 backdrop-blur-xs flex items-center justify-center z-40 p-4">
         <div class="anim-scale-in bg-white rounded-2xl w-full max-w-sm p-7 max-h-[90dvh] overflow-y-auto shadow-2xl">
             <div id="struk-body"></div>
-            <div id="struk-actions" class="flex gap-2.5 mt-7">
+            <div id="struk-lebar-picker" class="flex items-center justify-between gap-2 mt-6 mb-4">
+                <span class="text-xs font-bold text-zinc-500">Lebar Struk</span>
+                <div class="flex bg-zinc-100 rounded-lg p-0.5">
+                    <button type="button" data-choice-struk-lebar="58" title="Cetak 58mm"
+                        class="px-3 py-1 rounded-md text-xs font-bold text-zinc-600 transition-colors cursor-pointer">58mm</button>
+                    <button type="button" data-choice-struk-lebar="80" title="Cetak 80mm"
+                        class="px-3 py-1 rounded-md text-xs font-bold text-zinc-600 transition-colors cursor-pointer">80mm</button>
+                </div>
+            </div>
+            <div id="struk-actions" class="flex gap-2.5">
                 <button id="btn-print-struk" type="button"
                     class="flex-1 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] text-white font-bold rounded-xl py-3 text-sm transition cursor-pointer">Cetak Struk</button>
                 <button id="btn-tutup-struk" type="button"

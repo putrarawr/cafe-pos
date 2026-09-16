@@ -27,6 +27,8 @@ class Penjualan extends Model
         'kembalian',
         'alamat_pengiriman',
         'biaya_kirim',
+        'aplikator_id',
+        'komisi_aplikator',
     ];
 
     public function getActivitylogOptions(): LogOptions
@@ -68,5 +70,10 @@ class Penjualan extends Model
     public function details()
     {
         return $this->hasMany(DetailJual::class, 'penjualan_id');
+    }
+
+    public function aplikator()
+    {
+        return $this->belongsTo(Aplikator::class, 'aplikator_id');
     }
 }

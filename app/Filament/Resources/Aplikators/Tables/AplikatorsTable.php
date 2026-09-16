@@ -2,9 +2,13 @@
 
 namespace App\Filament\Resources\Aplikators\Tables;
 
+use App\Models\Aplikator;
+use App\Services\HargaAplikatorService;
+use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
@@ -62,6 +66,25 @@ class AplikatorsTable
                 //
             ])
             ->recordActions([
+                Action::make('hitungUlangHarga')
+                    ->label('Hitung Ulang Harga')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Hitung ulang harga delivery?')
+                    ->modalDescription('Semua harga jual delivery untuk aplikator ini akan dihitung ulang dari harga normal + persentase komisi. Perubahan manual pada harga delivery akan ditimpa.')
+                    ->modalSubmitActionLabel('Ya, hitung ulang')
+                    ->visible(fn (Aplikator $record): bool => (float) $record->persentase_komisi > 0)
+                    ->action(function (Aplikator $record): void {
+                        $jumlah = app(HargaAplikatorService::class)->sinkronkan($record);
+
+                        Notification::make()
+                            ->title("Harga delivery {$record->nama_aplikator} diperbarui")
+                            ->body("{$jumlah} barang dihitung ulang dari harga normal + {$record->persentase_komisi}% komisi.")
+                            ->success()
+                            ->send();
+                    }),
+
                 EditAction::make(),
             ])
             ->toolbarActions([

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Aplikator;
 use App\Models\Barang;
 use App\Models\Gudang;
 use App\Models\JenisBarang;
@@ -108,6 +109,13 @@ class KemasanDanTipePesananTest extends TestCase
         ]);
         $kemasan->gudangs()->attach($gudang->id, ['stok' => 100]);
 
+        $gofood = Aplikator::create([
+            'nama_aplikator' => 'GoFood',
+            'kode_aplikator' => 'GOFOOD',
+            'persentase_komisi' => 20.00,
+            'status_aktif' => true,
+        ]);
+
         $payload = [
             'gudang_id' => $gudang->id,
             'tanggal' => now()->toDateString(),
@@ -117,6 +125,7 @@ class KemasanDanTipePesananTest extends TestCase
             'bayar' => 40000,
             'alamat_pengiriman' => 'Jl. Anggrek No. 12, RT 02/05',
             'biaya_kirim' => 10000,
+            'aplikator_id' => $gofood->id,
             'details' => [
                 [
                     'barang_id' => $kopi->id,
