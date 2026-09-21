@@ -23,7 +23,7 @@ class AplikatorsTable
                 ImageColumn::make('gambar')
                     ->label('Logo')
                     ->disk('public')
-                    ->height(28)
+                    ->imageHeight(28)
                     ->placeholder('-'),
 
                 TextColumn::make('nama_aplikator')

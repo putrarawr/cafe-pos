@@ -196,19 +196,18 @@ class RekapanAplikatorTest extends TestCase
 
         $page = Livewire::actingAs($user)->test(RekapanAplikator::class);
 
-        $page->assertSeeHtml('wire:click="pilihAplikator('.$gofood->id.')"')
-            ->assertSeeHtml('wire:click="hapusFilterAplikator()"');
-
         $page->call('pilihAplikator', $gofood->id)
             ->assertCanSeeTableRecords([$gofood])
             ->assertCanNotSeeTableRecords([$grab])
-            ->assertSee('Total Terfilter');
+            ->assertSee('Menampilkan ringkasan terfilter')
+            ->assertSeeHtml('wire:click="hapusFilterAplikator()"');
 
         $this->assertSame($gofood->id, $page->get('data.aplikator_id'));
 
         $page->call('hapusFilterAplikator')
             ->assertCanSeeTableRecords([$gofood, $grab])
-            ->assertSee('Total Semua Aplikator');
+            ->assertDontSee('Menampilkan ringkasan terfilter')
+            ->assertSee('Total Pesanan Delivery');
 
         $this->assertNull($page->get('data.aplikator_id'));
     }

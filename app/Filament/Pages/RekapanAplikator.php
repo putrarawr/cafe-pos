@@ -133,6 +133,16 @@ class RekapanAplikator extends Page implements HasForms, HasTable
         $omset = (float) ($stat->sum_omset ?? 0);
         $komisi = (float) ($stat->sum_komisi ?? 0);
         $kirim = (float) ($stat->sum_kirim ?? 0);
+        $countTransaksi = (int) ($stat->count_transaksi ?? 0);
+        $bersih = $omset - $kirim - $komisi;
+
+        $totalQty = (int) (clone $query)->reorder()
+            ->join('detail_jual', 'penjualan.id', '=', 'detail_jual.penjualan_id')
+            ->sum('detail_jual.jumlah');
+
+        $avgOrder = $countTransaksi > 0 ? (int) round($omset / $countTransaksi) : 0;
+        $komisiPersen = $omset > 0 ? round(($komisi / $omset) * 100, 1) : 0;
+        $marginBersihPersen = $omset > 0 ? round(($bersih / $omset) * 100, 1) : 0;
 
         // Rincian per aplikator
         $perAplikator = (clone $query)
@@ -157,13 +167,21 @@ class RekapanAplikator extends Page implements HasForms, HasTable
             'sum_kirim' => (float) ($perAplikator[$a->id]->sum_kirim ?? 0),
         ])->all();
 
+        $activeAplikator = !empty($aplikatorId) ? Aplikator::find($aplikatorId) : null;
+
         return [
             'aplikators' => $aplikators,
-            'count_transaksi' => (int) ($stat->count_transaksi ?? 0),
+            'count_transaksi' => $countTransaksi,
             'sum_omset' => $omset,
             'sum_komisi' => $komisi,
-            'sum_bersih' => $omset - $kirim - $komisi,
-            'sum_kirim' => (float) ($stat->sum_kirim ?? 0),
+            'sum_bersih' => $bersih,
+            'sum_kirim' => $kirim,
+            'total_qty' => $totalQty,
+            'avg_order' => $avgOrder,
+            'komisi_persen' => $komisiPersen,
+            'margin_bersih_persen' => $marginBersihPersen,
+            'is_filtered' => !empty($aplikatorId),
+            'filtered_aplikator_nama' => $activeAplikator?->nama_aplikator,
         ];
     }
 

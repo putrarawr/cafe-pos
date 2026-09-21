@@ -15,6 +15,7 @@ use App\Models\PromoBonus;
 use App\Models\User;
 use App\Services\StokService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -82,96 +83,18 @@ class KasirController extends Controller
      */
     public function index()
     {
-        $karyawanInfo = null;
-        if ($karyawan = Auth::guard('karyawan')->user()) {
-            $karyawanInfo = [
-                'id' => $karyawan->id_karyawan,
-                'nama' => $karyawan->nama_karyawan,
-                'email' => $karyawan->email,
-                'type' => 'karyawan',
-            ];
-        } elseif ($user = Auth::guard('web')->user()) {
-            $karyawanInfo = [
-                'id' => $user->id,
-                'nama' => $user->name,
-                'email' => $user->email,
-                'type' => 'user',
-            ];
-        }
-
         return view('kasir', [
             'kasirData' => [
-                'karyawan' => $karyawanInfo,
-                'barang' => Barang::bisaDijual()
-                    ->where(function ($q) {
-                        $q->whereNull('tipe_barang')
-                            ->orWhereNotIn('tipe_barang', ['kemasan', 'barang_pembantu']);
-                    })
-                    ->with(['gudangs', 'kemasan', 'hargaAplikators'])
-                    ->get()
-                    ->map(fn(Barang $b) => [
-                        'id' => $b->id,
-                        'jenis_barang_id' => $b->jenis_barang_id,
-                        'nama_barang' => $b->nama_barang,
-                        'gambar' => $b->gambar_url,
-                        'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
-                        'status' => $b->status ?? 'tersedia',
-                        'butuh_proses' => (bool) $b->butuh_proses,
-                        'kemasan_id' => $b->kemasan_id,
-                        'kemasan' => $b->kemasan ? [
-                            'id' => $b->kemasan->id,
-                            'nama_barang' => $b->kemasan->nama_barang,
-                            'harga_jual' => (int) $b->kemasan->harga_jual,
-                            'satuan' => $b->kemasan->satuan ?? 'Pcs',
-                        ] : null,
-                        'nomer_seri' => $b->nomer_seri,
-                        'barcode' => $b->barcode,
-                        'harga_jual' => (int) $b->harga_jual,
-                        'harga_beli' => (int) $b->harga_beli,
-                        'harga_aplikator' => $b->hargaAplikators->mapWithKeys(fn($h) => [(int) $h->aplikator_id => (int) $h->harga_jual]),
-                        'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
-                        'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
-                        'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
-                        'min_qty_2' => filled($b->min_qty_2) ? (int) $b->min_qty_2 : null,
-                        'nilai_tier_2' => (float) ($b->nilai_tier_2 ?? 0),
-                        'min_qty_3' => filled($b->min_qty_3) ? (int) $b->min_qty_3 : null,
-                        'nilai_tier_3' => (float) ($b->nilai_tier_3 ?? 0),
-                        'satuan' => $b->satuan ?? 'Pcs',
-                        'units' => $b->getAvailableUnits(),
-                        // stok per gudang dari pivot barang_gudang: { gudang_id: jumlah_dasar }
-                        'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
-                    ]),
+                'karyawan' => $this->getKaryawanInfo(),
+                'barang' => $this->getBarangData(),
                 'kemasanDefault' => $this->getKemasanDefaultData(),
-                'barangKemasan' => Barang::whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])
-                    ->where('status', 'tersedia')
-                    ->with('gudangs')
-                    ->get()
-                    ->map(fn(Barang $b) => [
-                        'id' => $b->id,
-                        'nama_barang' => $b->nama_barang,
-                        'harga_jual' => (int) $b->harga_jual,
-                        'satuan' => $b->satuan ?? 'Pcs',
-                        'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
-                    ]),
+                'barangKemasan' => $this->getBarangKemasanData(),
                 'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
                 'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
                 'aplikator' => $this->getAplikatorData(),
                 'toko' => config('toko'),
-                'kasirList' => array_merge(
-                    Karyawan::all()->pluck('nama_karyawan')->all(),
-                    User::all()->map(fn(User $u) => $u->name . ' [Admin]')->all(),
-                ),
-                'promoBonus' => PromoBonus::active()->get()->map(fn(PromoBonus $p) => [
-                    'id' => $p->id,
-                    'nama_promo' => $p->nama_promo,
-                    'barang_utama_id' => $p->barang_utama_id,
-                    'min_qty_utama' => (int) $p->min_qty_utama,
-                    'satuan_utama' => $p->satuan_utama,
-                    'barang_bonus_id' => $p->barang_bonus_id,
-                    'qty_bonus' => (int) $p->qty_bonus,
-                    'satuan_bonus' => $p->satuan_bonus,
-                    'is_kelipatan' => (bool) $p->is_kelipatan,
-                ]),
+                'kasirList' => $this->getKasirListData(),
+                'promoBonus' => $this->getPromoBonusData(),
             ],
         ]);
     }
@@ -182,75 +105,138 @@ class KasirController extends Controller
     public function data()
     {
         return response()->json([
-            'barang' => Barang::bisaDijual()
-                ->where(function ($q) {
-                    $q->whereNull('tipe_barang')
-                        ->orWhereNotIn('tipe_barang', ['kemasan', 'barang_pembantu']);
-                })
-                ->with(['gudangs', 'kemasan', 'hargaAplikators'])
-                ->get()
-                ->map(fn(Barang $b) => [
-                    'id' => $b->id,
-                    'jenis_barang_id' => $b->jenis_barang_id,
-                    'nama_barang' => $b->nama_barang,
-                    'gambar' => $b->gambar_url,
-                    'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
-                    'status' => $b->status ?? 'tersedia',
-                    'butuh_proses' => (bool) $b->butuh_proses,
-                    'kemasan_id' => $b->kemasan_id,
-                    'kemasan' => $b->kemasan ? [
-                        'id' => $b->kemasan->id,
-                        'nama_barang' => $b->kemasan->nama_barang,
-                        'harga_jual' => (int) $b->kemasan->harga_jual,
-                        'satuan' => $b->kemasan->satuan ?? 'Pcs',
-                    ] : null,
-                    'nomer_seri' => $b->nomer_seri,
-                    'barcode' => $b->barcode,
-                    'harga_jual' => (int) $b->harga_jual,
-                    'harga_beli' => (int) $b->harga_beli,
-                    'harga_aplikator' => $b->hargaAplikators->mapWithKeys(fn($h) => [(int) $h->aplikator_id => (int) $h->harga_jual]),
-                    'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
-                    'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
-                    'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
-                    'min_qty_2' => filled($b->min_qty_2) ? (int) $b->min_qty_2 : null,
-                    'nilai_tier_2' => (float) ($b->nilai_tier_2 ?? 0),
-                    'min_qty_3' => filled($b->min_qty_3) ? (int) $b->min_qty_3 : null,
-                    'nilai_tier_3' => (float) ($b->nilai_tier_3 ?? 0),
-                    'satuan' => $b->satuan ?? 'Pcs',
-                    'units' => $b->getAvailableUnits(),
-                    'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
-                ]),
+            'barang' => $this->getBarangData(),
             'kemasanDefault' => $this->getKemasanDefaultData(),
-            'barangKemasan' => Barang::whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])
-                ->where('status', 'tersedia')
-                ->with('gudangs')
-                ->get()
-                ->map(fn(Barang $b) => [
-                    'id' => $b->id,
-                    'nama_barang' => $b->nama_barang,
-                    'harga_jual' => (int) $b->harga_jual,
-                    'satuan' => $b->satuan ?? 'Pcs',
-                    'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
-                ]),
+            'barangKemasan' => $this->getBarangKemasanData(),
             'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
             'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
             'aplikator' => $this->getAplikatorData(),
             'toko' => config('toko'),
-            'promoBonus' => PromoBonus::active()->get()->map(fn(PromoBonus $p) => [
-                'id' => $p->id,
-                'nama_promo' => $p->nama_promo,
-                'barang_utama_id' => $p->barang_utama_id,
-                'min_qty_utama' => (int) $p->min_qty_utama,
-                'satuan_utama' => $p->satuan_utama,
-                'barang_bonus_id' => $p->barang_bonus_id,
-                'qty_bonus' => (int) $p->qty_bonus,
-                'satuan_bonus' => $p->satuan_bonus,
-                'is_kelipatan' => (bool) $p->is_kelipatan,
-            ]),
+            'promoBonus' => $this->getPromoBonusData(),
         ])
             ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
             ->header('Pragma', 'no-cache')
             ->header('Expires', '0');
+    }
+
+    /**
+     * Ambil data master barang yang dapat dijual untuk kasir.
+     */
+    private function getBarangData(): array
+    {
+        return Barang::bisaDijual()
+            ->where(function ($q) {
+                $q->whereNull('tipe_barang')
+                    ->orWhereNotIn('tipe_barang', ['kemasan', 'barang_pembantu']);
+            })
+            ->with(['gudangs', 'kemasan', 'hargaAplikators'])
+            ->get()
+            ->map(fn(Barang $b) => [
+                'id' => $b->id,
+                'jenis_barang_id' => $b->jenis_barang_id,
+                'nama_barang' => $b->nama_barang,
+                'gambar' => $b->gambar_url,
+                'tipe_barang' => $b->tipe_barang ?? 'barang_dagang',
+                'status' => $b->status ?? 'tersedia',
+                'butuh_proses' => (bool) $b->butuh_proses,
+                'kemasan_id' => $b->kemasan_id,
+                'kemasan' => $b->kemasan ? [
+                    'id' => $b->kemasan->id,
+                    'nama_barang' => $b->kemasan->nama_barang,
+                    'harga_jual' => (int) $b->kemasan->harga_jual,
+                    'satuan' => $b->kemasan->satuan ?? 'Pcs',
+                ] : null,
+                'nomer_seri' => $b->nomer_seri,
+                'barcode' => $b->barcode,
+                'harga_jual' => (int) $b->harga_jual,
+                'harga_beli' => (int) $b->harga_beli,
+                'harga_aplikator' => $b->hargaAplikators->mapWithKeys(fn($h) => [(int) $h->aplikator_id => (int) $h->harga_jual]),
+                'tipe_harga_bertingkat' => $b->tipe_harga_bertingkat ?? 'persen',
+                'min_qty_1' => filled($b->min_qty_1) ? (int) $b->min_qty_1 : null,
+                'nilai_tier_1' => (float) ($b->nilai_tier_1 ?? 0),
+                'min_qty_2' => filled($b->min_qty_2) ? (int) $b->min_qty_2 : null,
+                'nilai_tier_2' => (float) ($b->nilai_tier_2 ?? 0),
+                'min_qty_3' => filled($b->min_qty_3) ? (int) $b->min_qty_3 : null,
+                'nilai_tier_3' => (float) ($b->nilai_tier_3 ?? 0),
+                'satuan' => $b->satuan ?? 'Pcs',
+                'units' => $b->getAvailableUnits(),
+                'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+            ])
+            ->all();
+    }
+
+    /**
+     * Ambil data barang kemasan/pembantu untuk kasir.
+     */
+    private function getBarangKemasanData(): array
+    {
+        return Barang::whereIn('tipe_barang', ['kemasan', 'barang_pembantu'])
+            ->where('status', 'tersedia')
+            ->with('gudangs')
+            ->get()
+            ->map(fn(Barang $b) => [
+                'id' => $b->id,
+                'nama_barang' => $b->nama_barang,
+                'harga_jual' => (int) $b->harga_jual,
+                'satuan' => $b->satuan ?? 'Pcs',
+                'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+            ])
+            ->all();
+    }
+
+    /**
+     * Ambil data promo bonus aktif untuk kasir.
+     */
+    private function getPromoBonusData(): array
+    {
+        return PromoBonus::active()->get()->map(fn(PromoBonus $p) => [
+            'id' => $p->id,
+            'nama_promo' => $p->nama_promo,
+            'barang_utama_id' => $p->barang_utama_id,
+            'min_qty_utama' => (int) $p->min_qty_utama,
+            'satuan_utama' => $p->satuan_utama,
+            'barang_bonus_id' => $p->barang_bonus_id,
+            'qty_bonus' => (int) $p->qty_bonus,
+            'satuan_bonus' => $p->satuan_bonus,
+            'is_kelipatan' => (bool) $p->is_kelipatan,
+        ])->all();
+    }
+
+    /**
+     * Ambil info login karyawan atau user web yang sedang aktif.
+     */
+    private function getKaryawanInfo(): ?array
+    {
+        if ($karyawan = Auth::guard('karyawan')->user()) {
+            return [
+                'id' => $karyawan->id_karyawan,
+                'nama' => $karyawan->nama_karyawan,
+                'email' => $karyawan->email,
+                'type' => 'karyawan',
+            ];
+        }
+
+        if ($user = Auth::guard('web')->user()) {
+            return [
+                'id' => $user->id,
+                'nama' => $user->name,
+                'email' => $user->email,
+                'type' => 'user',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Ambil daftar nama kasir dan admin.
+     */
+    private function getKasirListData(): array
+    {
+        return array_merge(
+            Karyawan::all()->pluck('nama_karyawan')->all(),
+            User::all()->map(fn(User $u) => $u->name . ' [Admin]')->all(),
+        );
     }
 
     /**
@@ -549,235 +535,316 @@ class KasirController extends Controller
             }
         }
 
-        $penjualan = DB::transaction(function () use ($data, $barangs, $gudangId, $hasDelivery, $biayaKirimFinal, $alamatPengirimanFinal, &$bonusPool, $promos, $promoByMainBarang) {
-            // ===== Bulk-fetch semua stok sebelum loop (1 query) =====
-            $stockRows = DB::table('barang_gudang')
-                ->where('gudang_id', $gudangId)
-                ->whereIn('barang_id', $barangs->keys()->all())
-                ->get()
-                ->keyBy('barang_id');
-            $stockMap = $stockRows->mapWithKeys(fn($row) => [$row->barang_id => (int) $row->stok]);
-
-            // ===== Bulk-lock semua Barang yang dijual dalam 1 query =====
-            $lockedBarangs = Barang::lockForUpdate()
-                ->whereIn('id', $barangs->keys()->all())
-                ->get()
-                ->keyBy('id');
-
-            // ===== Harga khusus per aplikator delivery (dari master barang) =====
-            $hargaAplikatorMap = [];
-            $komisiPersen = 0;
-            if ($hasDelivery && !empty($data['aplikator_id'])) {
-                $aplikator = Aplikator::find((int) $data['aplikator_id']);
-                $komisiPersen = $aplikator ? (float) $aplikator->persentase_komisi : 0;
-                $hargaAplikatorMap = BarangHargaAplikator::where('aplikator_id', (int) $data['aplikator_id'])
-                    ->whereIn('barang_id', $barangs->keys()->all())
-                    ->get()
-                    ->pluck('harga_jual', 'barang_id')
-                    ->map(fn($h) => (int) $h)
-                    ->all();
-            }
-
-            // total & harga dihitung ulang di server (jangan percaya angka dari browser)
-            $total = 0;
-            $details = [];
-            foreach ($data['details'] as $d) {
-                $barang = $lockedBarangs->get($d['barang_id']);
-                if (!$barang) {
-                    abort(422, 'Barang tidak ditemukan');
-                }
-                $satuan = $d['satuan'] ?? $barang->satuan;
-                $isBonus = !empty($d['is_bonus']);
-
-                $faktor = $barang->getFaktorKonversi($satuan);
-                $jumlahDasar = $d['jumlah'] * $faktor;
-
-                if ($isBonus) {
-                    // Bonus hanya sah kalau tercatat dalam "kumpulan bonus"
-                    $poolKey = (int) $d['barang_id'];
-                    $sisaBonus = $bonusPool[$poolKey]['base'] ?? 0;
-                    if ($sisaBonus < $jumlahDasar) {
-                        abort(422, "Item bonus {$barang->nama_barang} tidak sesuai aturan promo");
-                    }
-                    $bonusPool[$poolKey]['base'] = $sisaBonus - $jumlahDasar;
-
-                    $hargaSatuan = 0;
-                    $diskonItem = 0;
-                    $subtotal = 0;
-                    $hargaEfektif = 0;
-                } else {
-                    // Validasi stok dari data yang sudah di-fetch
-                    $stokSekarang = $stockMap[$d['barang_id']] ?? 0;
-                    if ($stokSekarang < $jumlahDasar) {
-                        abort(422, "Stok {$barang->nama_barang} di gudang ini tidak cukup (tersedia: {$stokSekarang} {$barang->satuan})");
-                    }
-
-                    $isDelivery = ($d['jenis_pesanan'] ?? 'dine_in') === 'delivery';
-                    $hargaAplikatorSatuan = $isDelivery ? ($hargaAplikatorMap[$d['barang_id']] ?? null) : null;
-                    if ($hargaAplikatorSatuan !== null) {
-                        // Harga khusus per aplikator: master berisi harga untuk Level 1,
-                        // skala ke satuan yang dipilih (sama seperti getHargaJualForSatuan).
-                        $hargaNormal = $hargaAplikatorSatuan * $faktor;
-                        $hargaTier = $barang->getHargaTierForQty((int) $d['jumlah'], $satuan, $hargaNormal);
-                    } else {
-                        $hargaNormal = $barang->getHargaJualForSatuan($satuan);
-                        $hargaTier = $barang->getHargaTierForQty((int) $d['jumlah'], $satuan);
-                    }
-                    $potonganTier = max(0, ($hargaNormal - $hargaTier) * (int) $d['jumlah']);
-                    $diskonItem = $potonganTier;
-                    $hargaSatuan = $hargaNormal;
-                    $hargaEfektif = $hargaTier;
-                    $subtotal = ($hargaNormal * (int) $d['jumlah']) - $diskonItem;
-                }
-
-                $total += $subtotal;
-                $hppSatuan = $barang->getHppForSatuan($satuan);
-                $details[] = [
-                    'barang' => $barang,
-                    'jumlah' => $d['jumlah'],
-                    'jumlah_dasar' => $jumlahDasar,
-                    'harga' => $hargaSatuan,
-                    'harga_efektif' => $hargaEfektif,
-                    'hpp' => $hppSatuan,
-                    'diskon' => $diskonItem,
-                    'subtotal' => $subtotal,
-                    'satuan' => $satuan,
-                    'is_bonus' => $isBonus,
-                    'promo_id' => $d['promo_id'] ?? null,
-                    'jenis_pesanan' => $d['jenis_pesanan'] ?? 'dine_in',
-                ];
-            }
-
-            if (count($details) === 0) {
-                abort(422, 'Tidak ada item yang bisa dijual');
-            }
-
-            // diskon transaksi dihitung ulang dari persen agar tidak bisa dimanipulasi
-            $diskonNominal = (int) floor($total * (int) ($data['diskon_persen'] ?? 0) / 100);
-            $neto = max(0, $total - $diskonNominal);
-            if ($data['jenis_pembayaran'] === 'tunai' && $data['bayar'] < $neto) {
-                abort(422, 'Uang bayar kurang dari total');
-            }
-            $bayar = $data['jenis_pembayaran'] === 'tunai' ? $data['bayar'] : $neto;
-
-            // nomer nota urut - PostgreSQL: FOR UPDATE harus di subquery, bukan di aggregate
-            $countResult = DB::selectOne(
-                'SELECT COUNT(*) as cnt FROM (SELECT id FROM penjualan WHERE tanggal::date = ? FOR UPDATE) as locked',
-                [$data['tanggal']]
-            );
-            $urutan = ((int) ($countResult->cnt ?? 0)) + 1;
-            $nomerNota = 'PJ-' . str_replace('-', '', $data['tanggal']) . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
-
-            $karyawanId = Auth::guard('karyawan')->check() ? Auth::guard('karyawan')->id() : null;
-            $userId = Auth::guard('web')->check() ? Auth::guard('web')->id() : null;
-
-            // Tambahkan biaya kirim ke neto untuk perhitungan pembayaran
-            $netoWithKirim = $neto + $biayaKirimFinal;
-
-            if ($data['jenis_pembayaran'] === 'tunai' && $data['bayar'] < $netoWithKirim) {
-                abort(422, 'Uang bayar kurang dari total');
-            }
-            $bayarFinal = $data['jenis_pembayaran'] === 'tunai' ? $data['bayar'] : $netoWithKirim;
-
-            // Komisi aplikator (laporan) = persentase_komisi dari neto (sebelum biaya kirim)
-            $komisiAplikator = $hasDelivery && !empty($data['aplikator_id']) && $komisiPersen > 0
-                ? (int) round($neto * $komisiPersen / 100)
-                : null;
-
-            $penjualan = Penjualan::create([
-                'nomer_nota' => $nomerNota,
-                'karyawan_id' => $karyawanId,
-                'user_id' => $userId,
-                'gudang_id' => $gudangId,
-                'tanggal' => $data['tanggal'],
-                'total' => $total,
-                'diskon' => $diskonNominal,
-                'neto' => $netoWithKirim,
-                'jenis_pembayaran' => $data['jenis_pembayaran'],
-                'bayar' => $bayarFinal,
-                'kembalian' => max(0, $bayarFinal - $netoWithKirim),
-                'alamat_pengiriman' => $alamatPengirimanFinal,
-                'biaya_kirim' => $biayaKirimFinal,
-                'aplikator_id' => $hasDelivery ? ($data['aplikator_id'] ?? null) : null,
-                'komisi_aplikator' => $komisiAplikator,
-            ]);
-
-            // ===== Bulk-insert DetailJual (1 query alih-alih N) =====
-            $detailRows = [];
-            foreach ($details as $d) {
-                $bonusBarangId = null;
-                $bonusQty = null;
-                $bonusSatuan = null;
-                $bonusHpp = null;
-                $promoId = $d['promo_id'] ?? null;
-
-                if (!$d['is_bonus']) {
-                    if (isset($promoByMainBarang[$d['barang']->id])) {
-                        $pInfo = $promoByMainBarang[$d['barang']->id];
-                        $promoId = $pInfo['promo_id'];
-                        $bonusBarangId = $pInfo['bonus_barang_id'];
-                        $bonusQty = $pInfo['bonus_qty'];
-                        $bonusSatuan = $pInfo['bonus_satuan'];
-                        $bonusHpp = $pInfo['bonus_hpp'];
-                    } elseif (!empty($d['promo_id']) && $promos->isNotEmpty()) {
-                        $promo = $promos->firstWhere('id', $d['promo_id']);
-                        if ($promo && $promo->barangBonus) {
-                            $bonusBarangId = $promo->barang_bonus_id;
-                            $faktorUtama = $d['barang']->getFaktorKonversi($promo->satuan_utama);
-                            $minBase = (int) $promo->min_qty_utama * $faktorUtama;
-                            $multiplier = ($promo->is_kelipatan && $minBase > 0) ? (int) floor($d['jumlah_dasar'] / $minBase) : 1;
-                            $bonusQty = (int) $promo->qty_bonus * max(1, $multiplier);
-                            $bonusSatuan = $promo->satuan_bonus ?? $promo->barangBonus->satuan;
-                            $bonusHpp = $promo->barangBonus->getHppForSatuan($bonusSatuan);
-                        }
-                    }
-                }
-
-                $detailRows[] = [
-                    'penjualan_id' => $penjualan->id,
-                    'barang_id' => $d['barang']->id,
-                    'gudang_id' => $gudangId,
-                    'satuan' => $d['satuan'],
-                    'jumlah' => $d['jumlah'],
-                    'harga' => $d['harga'],
-                    'hpp' => $d['hpp'],
-                    'diskon' => $d['diskon'],
-                    'subtotal' => $d['subtotal'],
-                    'is_bonus' => $d['is_bonus'],
-                    'promo_id' => $promoId,
-                    'bonus_barang_id' => $bonusBarangId,
-                    'bonus_qty' => $bonusQty,
-                    'bonus_satuan' => $bonusSatuan,
-                    'bonus_hpp' => $bonusHpp,
-                    'jenis_pesanan' => $d['jenis_pesanan'] ?? 'dine_in',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-            DB::table('detail_jual')->insert($detailRows);
-
-            // ===== Kurangi stok via StokService (perlu lockForUpdate per-barang) =====
-            $stokService = app(StokService::class);
-            foreach ($details as $d) {
-                $stokService->kurangiStok(
-                    barangId: $d['barang']->id,
-                    gudangId: $gudangId,
-                    jumlah: $d['jumlah_dasar'],
-                    konteks: [
-                        'nomer_entry' => $nomerNota,
-                        'tanggal' => $data['tanggal'],
-                        'harga' => $d['harga_efektif'],
-                        'keterangan' => "Penjualan kasir ({$d['jumlah']} {$d['satuan']})",
-                        'jenis' => KartuStok::JENIS_KELUAR,
-                        'nomer_seri' => $d['barang']->nomer_seri ?? null,
-                    ],
-                    validasi: false,
-                );
-            }
-
-            return $penjualan;
-        });
+        $penjualan = DB::transaction(fn () => $this->simpanTransaksiPenjualan(
+            $data,
+            $barangs,
+            $gudangId,
+            $hasDelivery,
+            $biayaKirimFinal,
+            $alamatPengirimanFinal,
+            $bonusPool,
+            $promos,
+            $promoByMainBarang
+        ));
 
         return response()->json($penjualan->load('details.barang'));
+    }
+
+    /**
+     * Eksekusi transaksi database untuk mencatat penjualan, detail item, dan mutasi stok.
+     */
+    private function simpanTransaksiPenjualan(
+        array $data,
+        Collection $barangs,
+        int $gudangId,
+        bool $hasDelivery,
+        int $biayaKirimFinal,
+        ?string $alamatPengirimanFinal,
+        array &$bonusPool,
+        Collection $promos,
+        array $promoByMainBarang
+    ): Penjualan {
+        $aplikatorId = !empty($data['aplikator_id']) ? (int) $data['aplikator_id'] : null;
+
+        [$total, $details] = $this->kalkulasiItemPenjualan(
+            $data['details'],
+            $barangs,
+            $gudangId,
+            $hasDelivery,
+            $aplikatorId,
+            $bonusPool
+        );
+
+        $penjualan = $this->buatPenjualan(
+            $data,
+            $gudangId,
+            $total,
+            $biayaKirimFinal,
+            $alamatPengirimanFinal,
+            $hasDelivery,
+            $aplikatorId
+        );
+
+        $this->simpanDetailJual($penjualan->id, $gudangId, $details, $promos, $promoByMainBarang);
+
+        $this->potongStokPenjualan($penjualan->nomer_nota, $data['tanggal'], $gudangId, $details);
+
+        return $penjualan;
+    }
+
+    /**
+     * Kalkulasi harga, potongan tier, validasi stok, dan pembentukan struktur detail item penjualan.
+     *
+     * @return array{0: int, 1: array}
+     */
+    private function kalkulasiItemPenjualan(
+        array $detailsInput,
+        Collection $barangs,
+        int $gudangId,
+        bool $hasDelivery,
+        ?int $aplikatorId,
+        array &$bonusPool
+    ): array {
+        $stockRows = DB::table('barang_gudang')
+            ->where('gudang_id', $gudangId)
+            ->whereIn('barang_id', $barangs->keys()->all())
+            ->get()
+            ->keyBy('barang_id');
+        $stockMap = $stockRows->mapWithKeys(fn($row) => [$row->barang_id => (int) $row->stok]);
+
+        $lockedBarangs = Barang::lockForUpdate()
+            ->whereIn('id', $barangs->keys()->all())
+            ->get()
+            ->keyBy('id');
+
+        $hargaAplikatorMap = [];
+        if ($hasDelivery && $aplikatorId) {
+            $hargaAplikatorMap = BarangHargaAplikator::where('aplikator_id', $aplikatorId)
+                ->whereIn('barang_id', $barangs->keys()->all())
+                ->get()
+                ->pluck('harga_jual', 'barang_id')
+                ->map(fn($h) => (int) $h)
+                ->all();
+        }
+
+        $total = 0;
+        $details = [];
+        foreach ($detailsInput as $d) {
+            $barang = $lockedBarangs->get($d['barang_id']);
+            if (!$barang) {
+                abort(422, 'Barang tidak ditemukan');
+            }
+            $satuan = $d['satuan'] ?? $barang->satuan;
+            $isBonus = !empty($d['is_bonus']);
+
+            $faktor = $barang->getFaktorKonversi($satuan);
+            $jumlahDasar = $d['jumlah'] * $faktor;
+
+            if ($isBonus) {
+                $poolKey = (int) $d['barang_id'];
+                $sisaBonus = $bonusPool[$poolKey]['base'] ?? 0;
+                if ($sisaBonus < $jumlahDasar) {
+                    abort(422, "Item bonus {$barang->nama_barang} tidak sesuai aturan promo");
+                }
+                $bonusPool[$poolKey]['base'] = $sisaBonus - $jumlahDasar;
+
+                $hargaSatuan = 0;
+                $diskonItem = 0;
+                $subtotal = 0;
+                $hargaEfektif = 0;
+            } else {
+                $stokSekarang = $stockMap[$d['barang_id']] ?? 0;
+                if ($stokSekarang < $jumlahDasar) {
+                    abort(422, "Stok {$barang->nama_barang} di gudang ini tidak cukup (tersedia: {$stokSekarang} {$barang->satuan})");
+                }
+
+                $isDelivery = ($d['jenis_pesanan'] ?? 'dine_in') === 'delivery';
+                $hargaAplikatorSatuan = $isDelivery ? ($hargaAplikatorMap[$d['barang_id']] ?? null) : null;
+                if ($hargaAplikatorSatuan !== null) {
+                    $hargaNormal = $hargaAplikatorSatuan * $faktor;
+                    $hargaTier = $barang->getHargaTierForQty((int) $d['jumlah'], $satuan, $hargaNormal);
+                } else {
+                    $hargaNormal = $barang->getHargaJualForSatuan($satuan);
+                    $hargaTier = $barang->getHargaTierForQty((int) $d['jumlah'], $satuan);
+                }
+                $potonganTier = max(0, ($hargaNormal - $hargaTier) * (int) $d['jumlah']);
+                $diskonItem = $potonganTier;
+                $hargaSatuan = $hargaNormal;
+                $hargaEfektif = $hargaTier;
+                $subtotal = ($hargaNormal * (int) $d['jumlah']) - $diskonItem;
+            }
+
+            $total += $subtotal;
+            $hppSatuan = $barang->getHppForSatuan($satuan);
+            $details[] = [
+                'barang' => $barang,
+                'jumlah' => $d['jumlah'],
+                'jumlah_dasar' => $jumlahDasar,
+                'harga' => $hargaSatuan,
+                'harga_efektif' => $hargaEfektif,
+                'hpp' => $hppSatuan,
+                'diskon' => $diskonItem,
+                'subtotal' => $subtotal,
+                'satuan' => $satuan,
+                'is_bonus' => $isBonus,
+                'promo_id' => $d['promo_id'] ?? null,
+                'jenis_pesanan' => $d['jenis_pesanan'] ?? 'dine_in',
+            ];
+        }
+
+        if (count($details) === 0) {
+            abort(422, 'Tidak ada item yang bisa dijual');
+        }
+
+        return [$total, $details];
+    }
+
+    /**
+     * Buat data header transaksi Penjualan.
+     */
+    private function buatPenjualan(
+        array $data,
+        int $gudangId,
+        int $total,
+        int $biayaKirimFinal,
+        ?string $alamatPengirimanFinal,
+        bool $hasDelivery,
+        ?int $aplikatorId
+    ): Penjualan {
+        $diskonNominal = (int) floor($total * (int) ($data['diskon_persen'] ?? 0) / 100);
+        $neto = max(0, $total - $diskonNominal);
+        $netoWithKirim = $neto + $biayaKirimFinal;
+
+        if ($data['jenis_pembayaran'] === 'tunai' && $data['bayar'] < $netoWithKirim) {
+            abort(422, 'Uang bayar kurang dari total');
+        }
+        $bayarFinal = $data['jenis_pembayaran'] === 'tunai' ? $data['bayar'] : $netoWithKirim;
+
+        $countResult = DB::selectOne(
+            'SELECT COUNT(*) as cnt FROM (SELECT id FROM penjualan WHERE tanggal::date = ? FOR UPDATE) as locked',
+            [$data['tanggal']]
+        );
+        $urutan = ((int) ($countResult->cnt ?? 0)) + 1;
+        $nomerNota = 'PJ-' . str_replace('-', '', $data['tanggal']) . '-' . str_pad($urutan, 4, '0', STR_PAD_LEFT);
+
+        $karyawanId = Auth::guard('karyawan')->check() ? Auth::guard('karyawan')->id() : null;
+        $userId = Auth::guard('web')->check() ? Auth::guard('web')->id() : null;
+
+        $komisiPersen = 0;
+        if ($hasDelivery && $aplikatorId) {
+            $aplikator = Aplikator::find($aplikatorId);
+            $komisiPersen = $aplikator ? (float) $aplikator->persentase_komisi : 0;
+        }
+
+        $komisiAplikator = $hasDelivery && $aplikatorId && $komisiPersen > 0
+            ? (int) round($neto * $komisiPersen / 100)
+            : null;
+
+        return Penjualan::create([
+            'nomer_nota' => $nomerNota,
+            'karyawan_id' => $karyawanId,
+            'user_id' => $userId,
+            'gudang_id' => $gudangId,
+            'tanggal' => $data['tanggal'],
+            'total' => $total,
+            'diskon' => $diskonNominal,
+            'neto' => $netoWithKirim,
+            'jenis_pembayaran' => $data['jenis_pembayaran'],
+            'bayar' => $bayarFinal,
+            'kembalian' => max(0, $bayarFinal - $netoWithKirim),
+            'alamat_pengiriman' => $alamatPengirimanFinal,
+            'biaya_kirim' => $biayaKirimFinal,
+            'aplikator_id' => $hasDelivery ? $aplikatorId : null,
+            'komisi_aplikator' => $komisiAplikator,
+        ]);
+    }
+
+    /**
+     * Simpan seluruh baris detail penjualan beserta info promo bonus ke tabel detail_jual.
+     */
+    private function simpanDetailJual(
+        int $penjualanId,
+        int $gudangId,
+        array $details,
+        Collection $promos,
+        array $promoByMainBarang
+    ): void {
+        $detailRows = [];
+        foreach ($details as $d) {
+            $bonusBarangId = null;
+            $bonusQty = null;
+            $bonusSatuan = null;
+            $bonusHpp = null;
+            $promoId = $d['promo_id'] ?? null;
+
+            if (!$d['is_bonus']) {
+                if (isset($promoByMainBarang[$d['barang']->id])) {
+                    $pInfo = $promoByMainBarang[$d['barang']->id];
+                    $promoId = $pInfo['promo_id'];
+                    $bonusBarangId = $pInfo['bonus_barang_id'];
+                    $bonusQty = $pInfo['bonus_qty'];
+                    $bonusSatuan = $pInfo['bonus_satuan'];
+                    $bonusHpp = $pInfo['bonus_hpp'];
+                } elseif (!empty($d['promo_id']) && $promos->isNotEmpty()) {
+                    $promo = $promos->firstWhere('id', $d['promo_id']);
+                    if ($promo && $promo->barangBonus) {
+                        $bonusBarangId = $promo->barang_bonus_id;
+                        $faktorUtama = $d['barang']->getFaktorKonversi($promo->satuan_utama);
+                        $minBase = (int) $promo->min_qty_utama * $faktorUtama;
+                        $multiplier = ($promo->is_kelipatan && $minBase > 0) ? (int) floor($d['jumlah_dasar'] / $minBase) : 1;
+                        $bonusQty = (int) $promo->qty_bonus * max(1, $multiplier);
+                        $bonusSatuan = $promo->satuan_bonus ?? $promo->barangBonus->satuan;
+                        $bonusHpp = $promo->barangBonus->getHppForSatuan($bonusSatuan);
+                    }
+                }
+            }
+
+            $detailRows[] = [
+                'penjualan_id' => $penjualanId,
+                'barang_id' => $d['barang']->id,
+                'gudang_id' => $gudangId,
+                'satuan' => $d['satuan'],
+                'jumlah' => $d['jumlah'],
+                'harga' => $d['harga'],
+                'hpp' => $d['hpp'],
+                'diskon' => $d['diskon'],
+                'subtotal' => $d['subtotal'],
+                'is_bonus' => $d['is_bonus'],
+                'promo_id' => $promoId,
+                'bonus_barang_id' => $bonusBarangId,
+                'bonus_qty' => $bonusQty,
+                'bonus_satuan' => $bonusSatuan,
+                'bonus_hpp' => $bonusHpp,
+                'jenis_pesanan' => $d['jenis_pesanan'] ?? 'dine_in',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        DB::table('detail_jual')->insert($detailRows);
+    }
+
+    /**
+     * Mutasi pengurangan stok barang gudang dan pencatatan kartu stok penjualan.
+     */
+    private function potongStokPenjualan(string $nomerNota, string $tanggal, int $gudangId, array $details): void
+    {
+        $stokService = app(StokService::class);
+        foreach ($details as $d) {
+            $stokService->kurangiStok(
+                barangId: $d['barang']->id,
+                gudangId: $gudangId,
+                jumlah: $d['jumlah_dasar'],
+                konteks: [
+                    'nomer_entry' => $nomerNota,
+                    'tanggal' => $tanggal,
+                    'harga' => $d['harga_efektif'],
+                    'keterangan' => "Penjualan kasir ({$d['jumlah']} {$d['satuan']})",
+                    'jenis' => KartuStok::JENIS_KELUAR,
+                    'nomer_seri' => $d['barang']->nomer_seri ?? null,
+                ],
+                validasi: false,
+            );
+        }
     }
 }

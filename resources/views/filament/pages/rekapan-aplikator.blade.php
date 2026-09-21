@@ -1,10 +1,10 @@
 <x-filament-panels::page>
     @php
         $stats = $this->overviewStats;
-        $activeAplikatorId = (int) ($this->data['aplikator_id'] ?? 0);
     @endphp
 
     <style>
+        /* Spacing & Padding Luas pada Tabel (Standar AGENTS.md) */
         .fi-ta-table th {
             padding-top: 14px !important;
             padding-bottom: 14px !important;
@@ -19,6 +19,7 @@
             padding-right: 16px !important;
         }
 
+        /* Styling Bersih & Netral Baris Rangkuman pada Tabel */
         .fi-ta-table tfoot,
         .fi-ta-table tfoot tr,
         .fi-ta-table tr[class*="summary"],
@@ -38,6 +39,7 @@
             padding-right: 16px !important;
         }
 
+        /* Label 'Rangkuman' dengan Tampilan Netral Bersih */
         .fi-ta-table tfoot td:first-child span,
         .fi-ta-table tr[class*="summary"] td:first-child span,
         .fi-ta-table tr:has([class*="summary"]) td:first-child span {
@@ -53,6 +55,7 @@
             letter-spacing: 0.05em !important;
         }
 
+        /* Teks Nilai Angka Rangkuman */
         .fi-ta-table tfoot td:not(:first-child),
         .fi-ta-table tr[class*="summary"] td:not(:first-child),
         .fi-ta-table tr:has([class*="summary"]) td:not(:first-child) {
@@ -61,78 +64,72 @@
         }
     </style>
 
-    <div style="display: flex; flex-direction: column; gap: 28px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-        {{-- Kartu Ringkasan per Aplikator --}}
-        <div style="font-size: 11px; color: #71717a; margin-bottom: -14px;">
-            Klik kartu aplikator untuk memfilter tabel. Klik &ldquo;Total Keseluruhan&rdquo; untuk menampilkan semua aplikator.
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px;">
-            @foreach ($stats['aplikators'] as $apl)
-                @php
-                    $adaTransaksi = $apl['count_transaksi'] > 0;
-                    $isActive = ((int) $apl['id']) === $activeAplikatorId;
-                @endphp
-                <div
-                    wire:click="pilihAplikator({{ $apl['id'] }})"
-                    role="button"
-                    tabindex="0"
-                    title="Klik untuk memfilter &mdash; {{ $apl['nama_aplikator'] }}"
-                    style="background: #18181b; border: 1px solid {{ $isActive ? '#34d399' : ($adaTransaksi ? '#3f3f46' : '#27272a') }}; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); cursor: pointer; transition: border-color 0.15s ease, opacity 0.15s ease; {{ (!$isActive && !$adaTransaksi) ? 'opacity: 0.55;' : '' }}"
-                    aria-pressed="{{ $isActive ? 'true' : 'false' }}"
-                >
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-size: 11px; font-weight: 700; color: {{ $isActive ? '#34d399' : '#a1a1aa' }}; text-transform: uppercase; letter-spacing: 0.05em;">{{ $apl['nama_aplikator'] }}</span>
-                        <span style="background: #27272a; color: #d4d4d8; border: 1px solid #3f3f46; padding: 3px 10px; border-radius: 4px; font-size: 10px; font-weight: 700;">
-                            {{ number_format($apl['count_transaksi'], 0, ',', '.') }} TRANSAKSI
-                        </span>
-                    </div>
-                    <div style="font-size: 22px; font-weight: 800; color: #ffffff; margin-top: 12px; letter-spacing: -0.02em;">
-                        Rp {{ number_format($apl['sum_omset'], 0, ',', '.') }}
-                    </div>
-                    @if ($adaTransaksi)
-                        <div style="font-size: 11px; color: #fbbf24; margin-top: 6px;">
-                            Komisi: -Rp {{ number_format($apl['sum_komisi'], 0, ',', '.') }}
-                        </div>
-                        <div style="font-size: 11px; color: #a1a1aa; margin-top: 4px;">
-                            Kirim: -Rp {{ number_format($apl['sum_kirim'], 0, ',', '.') }}
-                            &bull; Bersih: <span style="color: #34d399;">Rp {{ number_format($apl['sum_omset'] - $apl['sum_kirim'] - $apl['sum_komisi'], 0, ',', '.') }}</span>
-                        </div>
-                    @endif
-                </div>
-            @endforeach
-
-            {{-- Total Keseluruhan --}}
-            <div
-                wire:click="hapusFilterAplikator()"
-                role="button"
-                tabindex="0"
-                title="Klik untuk menampilkan semua aplikator"
-                style="background: #18181b; border: 1px solid {{ $activeAplikatorId === 0 ? '#60a5fa' : '#3f3f46' }}; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); cursor: pointer; transition: border-color 0.15s ease;"
-                aria-pressed="{{ $activeAplikatorId === 0 ? 'true' : 'false' }}"
-            >
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-size: 11px; font-weight: 700; color: {{ $activeAplikatorId === 0 ? '#60a5fa' : '#a1a1aa' }}; text-transform: uppercase; letter-spacing: 0.05em;">{{ $activeAplikatorId === 0 ? 'Total Semua Aplikator' : 'Total Terfilter' }}</span>
-                    <span style="background: #27272a; color: #d4d4d8; border: 1px solid #3f3f46; padding: 3px 10px; border-radius: 4px; font-size: 10px; font-weight: 700;">
-                        {{ number_format($stats['count_transaksi'], 0, ',', '.') }} TRANSAKSI
+    <div style="display: flex; flex-direction: column; gap: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        {{-- 1. 4 Kartu Metrik Finansial Tetap (Posisi Teratas) --}}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px;">
+            {{-- Kartu 1: Total Pesanan Delivery --}}
+            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                <div style="min-height: 22px; display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Total Pesanan Delivery</span>
+                    <span style="background: #27272a; color: #d4d4d8; border: 1px solid #3f3f46; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;">
+                        {{ number_format($stats['total_qty'], 0, ',', '.') }} ITEM
                     </span>
                 </div>
-                <div style="font-size: 22px; font-weight: 800; color: #ffffff; margin-top: 12px; letter-spacing: -0.02em;">
+                <div style="font-size: 24px; font-weight: 800; color: #ffffff; margin-top: 12px; letter-spacing: -0.02em;">
+                    {{ number_format($stats['count_transaksi'], 0, ',', '.') }} <span style="font-size: 14px; font-weight: 500; color: #a1a1aa;">Transaksi</span>
+                </div>
+            </div>
+
+            {{-- Kartu 2: Omset Kotor (Gross) --}}
+            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                <div style="min-height: 22px; display: flex; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Omset Kotor (Gross)</span>
+                </div>
+                <div style="font-size: 24px; font-weight: 800; color: #ffffff; margin-top: 12px; letter-spacing: -0.02em;">
                     Rp {{ number_format($stats['sum_omset'], 0, ',', '.') }}
                 </div>
-                <div style="font-size: 11px; color: #a1a1aa; margin-top: 6px;">
-                    Komisi <span style="color: #fbbf24;">-Rp {{ number_format($stats['sum_komisi'], 0, ',', '.') }}</span>
-                    &bull; Kirim <span style="color: #a1a1aa;">-Rp {{ number_format($stats['sum_kirim'], 0, ',', '.') }}</span>
-                    &bull; Bersih <span style="color: #34d399;">Rp {{ number_format($stats['sum_bersih'], 0, ',', '.') }}</span>
+            </div>
+
+            {{-- Kartu 3: Potongan Komisi Platform --}}
+            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                <div style="min-height: 22px; display: flex; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Potongan Komisi Platform</span>
+                </div>
+                <div style="font-size: 24px; font-weight: 800; color: #fbbf24; margin-top: 12px; letter-spacing: -0.02em;">
+                    - Rp {{ number_format($stats['sum_komisi'], 0, ',', '.') }} <span style="font-size: 14px; font-weight: 600; color: #f59e0b; margin-left: 4px;">({{ $stats['komisi_persen'] }}%)</span>
+                </div>
+            </div>
+
+            {{-- Kartu 4: Pendapatan Bersih (Net) --}}
+            <div style="background: #18181b; border: 1px solid #27272a; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
+                <div style="min-height: 22px; display: flex; align-items: center;">
+                    <span style="font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Pendapatan Bersih (Net)</span>
+                </div>
+                <div style="font-size: 24px; font-weight: 800; color: #34d399; margin-top: 12px; letter-spacing: -0.02em;">
+                    Rp {{ number_format($stats['sum_bersih'], 0, ',', '.') }} <span style="font-size: 14px; font-weight: 600; color: #10b981; margin-left: 4px;">({{ $stats['margin_bersih_persen'] }}%)</span>
                 </div>
             </div>
         </div>
 
-        {{-- Form Filter --}}
+        {{-- Indikator Jika Sedang Terfilter Spesifik --}}
+        @if ($stats['is_filtered'])
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #202024; border: 1px solid #3f3f46; border-radius: 6px; padding: 10px 16px; font-size: 12px; color: #d4d4d8;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #60a5fa;"></span>
+                    <span>Menampilkan ringkasan terfilter: <strong style="color: #60a5fa; font-size: 13px;">{{ $stats['filtered_aplikator_nama'] }}</strong></span>
+                </div>
+                <button type="button" wire:click="hapusFilterAplikator()" style="background: #27272a; color: #e4e4e7; border: 1px solid #52525b; padding: 5px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background 0.15s ease;">
+                    Reset Filter (Tampilkan Semua)
+                </button>
+            </div>
+        @endif
+
+        {{-- 2. Form Filter Periode & Aplikator (Di Bawah 4 Kartu) --}}
         <div>
             {{ $this->form }}
         </div>
 
-        {{-- Tabel Agregasi Rekapan Aplikator --}}
+        {{-- 3. Tabel Agregasi Rekapan per Aplikator (Posisi Bawah) --}}
         <div>
             {{ $this->table }}
         </div>
