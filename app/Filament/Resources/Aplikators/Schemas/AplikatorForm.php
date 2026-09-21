@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Aplikators\Schemas;
 
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -42,6 +43,15 @@ class AplikatorForm
                                 ->label('Status Aktif')
                                 ->helperText('Aplikator aktif dan dapat digunakan pada penetapan harga barang')
                                 ->default(true),
+
+                            FileUpload::make('gambar')
+                                ->label('Logo Aplikator')
+                                ->image()
+                                ->directory('aplikator')
+                                ->disk('public')
+                                ->maxSize(2048)
+                                ->helperText('Format PNG, SVG, JPG, atau WebP (Maksimal 2MB). Disarankan logo memanjang horizontal (landscape) transparan.')
+                                ->columnSpanFull(),
 
                             Textarea::make('keterangan')
                                 ->label('Catatan / Keterangan')

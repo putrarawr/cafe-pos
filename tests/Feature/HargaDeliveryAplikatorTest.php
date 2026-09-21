@@ -15,6 +15,8 @@ use App\Models\User;
 use Database\Seeders\AplikatorSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -345,7 +347,63 @@ class HargaDeliveryAplikatorTest extends TestCase
             ->set('data.hargaAplikators.record-0.aplikator_id', $aplikator->id)
             ->assertSet('data.hargaAplikators.record-0.harga_jual', 11500);
     }
+
+    public function test_aplikator_has_gambar_and_kasir_endpoint_returns_gambar()
+    {
+        $this->seed(AplikatorSeeder::class);
+
+        $gofood = Aplikator::where('kode_aplikator', 'GOFOOD')->first();
+        $this->assertNotNull($gofood->gambar);
+        $this->assertStringContainsString('aplikator/gofood.svg', $gofood->gambar_url);
+
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $response = $this->getJson(route('kasir.data'));
+        $response->assertSuccessful();
+
+        $data = $response->json();
+        $this->assertArrayHasKey('aplikator', $data);
+
+        $gofoodData = collect($data['aplikator'])->firstWhere('kode_aplikator', 'GOFOOD');
+        $this->assertNotNull($gofoodData);
+        $this->assertArrayHasKey('gambar', $gofoodData);
+        $this->assertStringContainsString('aplikator/gofood.svg', $gofoodData['gambar']);
+
+        $tokoData = collect($data['aplikator'])->firstWhere('kode_aplikator', 'TOKO');
+        $this->assertNotNull($tokoData);
+        $this->assertNull($tokoData['gambar']);
+    }
+
+    public function test_filament_aplikator_edit_saves_gambar()
+    {
+        Storage::fake('public');
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $aplikator = Aplikator::create([
+            'nama_aplikator' => 'Lalamove',
+            'kode_aplikator' => 'LALAMOVE',
+            'persentase_komisi' => 10.00,
+            'status_aktif' => true,
+        ]);
+
+        $file = UploadedFile::fake()->create('lalamove.png', 50, 'image/png');
+
+        Livewire::test(EditAplikator::class, ['record' => $aplikator->getRouteKey()])
+            ->assertSuccessful()
+            ->fillForm([
+                'gambar' => $file,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $aplikator->refresh();
+        $this->assertNotNull($aplikator->gambar);
+        $this->assertStringContainsString('aplikator/', $aplikator->gambar);
+    }
 }
+
 
 
 

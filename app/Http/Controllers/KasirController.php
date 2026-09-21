@@ -155,7 +155,7 @@ class KasirController extends Controller
                     ]),
                 'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
                 'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
-                'aplikator' => Aplikator::aktif()->orderBy('nama_aplikator')->get(['id', 'nama_aplikator', 'kode_aplikator', 'persentase_komisi']),
+                'aplikator' => $this->getAplikatorData(),
                 'toko' => config('toko'),
                 'kasirList' => array_merge(
                     Karyawan::all()->pluck('nama_karyawan')->all(),
@@ -234,7 +234,7 @@ class KasirController extends Controller
                 ]),
             'jenisBarang' => JenisBarang::all(['id', 'nama_jenis']),
             'gudang' => Gudang::all(['id', 'nama_gudang', 'alamat']),
-            'aplikator' => Aplikator::aktif()->orderBy('nama_aplikator')->get(['id', 'nama_aplikator', 'kode_aplikator', 'persentase_komisi']),
+            'aplikator' => $this->getAplikatorData(),
             'toko' => config('toko'),
             'promoBonus' => PromoBonus::active()->get()->map(fn(PromoBonus $p) => [
                 'id' => $p->id,
@@ -251,6 +251,24 @@ class KasirController extends Controller
             ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
             ->header('Pragma', 'no-cache')
             ->header('Expires', '0');
+    }
+
+    /**
+     * Ambil data platform aplikator delivery aktif untuk kasir beserta logo publik.
+     */
+    private function getAplikatorData(): array
+    {
+        return Aplikator::aktif()
+            ->orderBy('nama_aplikator')
+            ->get()
+            ->map(fn(Aplikator $a) => [
+                'id' => $a->id,
+                'nama_aplikator' => $a->nama_aplikator,
+                'kode_aplikator' => $a->kode_aplikator,
+                'persentase_komisi' => (float) $a->persentase_komisi,
+                'gambar' => $a->gambar_url,
+            ])
+            ->all();
     }
 
     /**

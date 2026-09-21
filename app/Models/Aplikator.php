@@ -19,6 +19,7 @@ class Aplikator extends Model
         'nama_aplikator',
         'kode_aplikator',
         'persentase_komisi',
+        'gambar',
         'keterangan',
         'status_aktif',
     ];
@@ -27,6 +28,19 @@ class Aplikator extends Model
         'persentase_komisi' => 'float',
         'status_aktif' => 'boolean',
     ];
+
+    public function getGambarUrlAttribute(): ?string
+    {
+        if (empty($this->gambar)) {
+            return null;
+        }
+
+        if (str_starts_with($this->gambar, 'http://') || str_starts_with($this->gambar, 'https://')) {
+            return $this->gambar;
+        }
+
+        return asset('storage/' . $this->gambar);
+    }
 
     public function getActivitylogOptions(): LogOptions
     {

@@ -56,14 +56,6 @@ function scheduleRenderProduk() {
 
 const TOKO_DEFAULT = { nama: 'Toko PKL', alamat: '', kontak: '' };
 
-// Logo aplikator delivery (dari kode_aplikator). Tidak ada entri = tampil teks biasa.
-const LOGO_APLIKATOR = {
-    GOFOOD: '/img/aplikator/gofood.svg',
-    GRABFOOD: '/img/aplikator/grabfood.png',
-    SHOPEEFOOD: '/img/aplikator/shopeefood.png',
-    MAXIM: '/img/aplikator/maxim.png',
-};
-
 /**
  * Generates multi-tier unit options (Pcs, Pack, Dus, Slop, Bal, Bag, Karung) and wholesale prices for every item
  */
@@ -1797,18 +1789,17 @@ function renderCart() {
                 <div class="grid grid-cols-2 gap-1.5">
                     ${state.aplikator.map((a) => {
                         const selected = Number(state.aplikatorId) === Number(a.id);
-                        const logo = LOGO_APLIKATOR[(a.kode_aplikator || '').toUpperCase()];
-                        if (logo) {
+                        if (a.gambar) {
                             return `<button type="button" data-aplikator-option="${a.id}" title="${escapeHtml(a.nama_aplikator)}" aria-label="${escapeHtml(a.nama_aplikator)}"
                                 class="flex items-center justify-center h-14 px-2 rounded-xl border transition-all cursor-pointer select-none bg-white
                                     ${selected
                                         ? 'border-zinc-900 ring-2 ring-zinc-900 shadow-xs bg-zinc-50'
                                         : 'border-zinc-200 hover:border-zinc-400'}">
-                                <img src="${logo}" alt="${escapeHtml(a.nama_aplikator)}" class="h-9 w-auto object-contain select-none pointer-events-none">
+                                <img src="${a.gambar}" alt="${escapeHtml(a.nama_aplikator)}" class="h-9 w-auto max-w-full object-contain select-none pointer-events-none">
                             </button>`;
                         }
                         return `<button type="button" data-aplikator-option="${a.id}" title="${escapeHtml(a.nama_aplikator)}"
-                            class="flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-2 rounded-xl border transition-all cursor-pointer select-none text-center leading-tight
+                            class="flex items-center justify-center gap-1.5 text-xs font-bold py-2 px-2 h-14 rounded-xl border transition-all cursor-pointer select-none text-center leading-tight
                                 ${selected
                                     ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
                                     : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400 hover:text-zinc-900'}">

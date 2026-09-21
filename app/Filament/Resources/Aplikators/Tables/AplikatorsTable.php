@@ -9,6 +9,7 @@ use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
@@ -19,6 +20,12 @@ class AplikatorsTable
     {
         return $table
             ->columns([
+                ImageColumn::make('gambar')
+                    ->label('Logo')
+                    ->disk('public')
+                    ->height(28)
+                    ->placeholder('-'),
+
                 TextColumn::make('nama_aplikator')
                     ->label('Nama Aplikator')
                     ->searchable()
