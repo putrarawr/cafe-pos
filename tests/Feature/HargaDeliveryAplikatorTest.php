@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\Aplikators\Pages\CreateAplikator;
 use App\Filament\Resources\Aplikators\Pages\EditAplikator;
 use App\Filament\Resources\Aplikators\Pages\ListAplikators;
+use App\Filament\Resources\Barangs\Pages\CreateBarang;
 use App\Filament\Resources\Barangs\Pages\EditBarang;
 use App\Models\Aplikator;
 use App\Models\Barang;
@@ -285,5 +286,66 @@ class HargaDeliveryAplikatorTest extends TestCase
             'harga_jual' => 15000,
         ]);
     }
+
+    public function test_repeater_auto_calculates_delivery_price_when_aplikator_selected_in_edit()
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $jenis = JenisBarang::create(['nama_jenis' => 'Kopi', 'kode_jenis' => 'KPI', 'deskripsi' => 'Kopi Deskripsi']);
+        $barang = Barang::create([
+            'jenis_barang_id' => $jenis->id,
+            'nama_barang' => 'Caramel Macchiato',
+            'harga_beli' => 8000,
+            'harga_jual' => 20000,
+            'satuan' => 'Cup',
+            'tipe_barang' => 'barang_jadi',
+            'status' => 'tersedia',
+            'bisa_dijual' => true,
+        ]);
+
+        $aplikator = Aplikator::create([
+            'nama_aplikator' => 'GoFood',
+            'kode_aplikator' => 'GOFOOD',
+            'persentase_komisi' => 20.00,
+            'status_aktif' => true,
+        ]);
+
+        // When setting aplikator_id in the repeater, harga_jual should automatically become 24000 (20000 + 20%)
+        Livewire::test(EditBarang::class, ['record' => $barang->getRouteKey()])
+            ->assertSuccessful()
+            ->set('data.hargaAplikators.record-0.aplikator_id', $aplikator->id)
+            ->assertSet('data.hargaAplikators.record-0.harga_jual', 24000)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $this->assertDatabaseHas('barang_harga_aplikator', [
+            'barang_id' => $barang->id,
+            'aplikator_id' => $aplikator->id,
+            'harga_jual' => 24000,
+        ]);
+    }
+
+    public function test_repeater_auto_calculates_delivery_price_in_create_barang()
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $jenis = JenisBarang::create(['nama_jenis' => 'Makanan', 'kode_jenis' => 'MKN', 'deskripsi' => 'Makanan Ringan']);
+        $aplikator = Aplikator::create([
+            'nama_aplikator' => 'Maxim Food',
+            'kode_aplikator' => 'MAXIM',
+            'persentase_komisi' => 15.00,
+            'status_aktif' => true,
+        ]);
+
+        Livewire::test(CreateBarang::class)
+            ->assertSuccessful()
+            ->set('data.harga_jual', 10000)
+            ->set('data.hargaAplikators.record-0.aplikator_id', $aplikator->id)
+            ->assertSet('data.hargaAplikators.record-0.harga_jual', 11500);
+    }
 }
+
+
 

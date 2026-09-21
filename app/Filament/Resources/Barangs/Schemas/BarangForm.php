@@ -2,15 +2,18 @@
 
 namespace App\Filament\Resources\Barangs\Schemas;
 
+use App\Models\Aplikator;
 use App\Models\JenisBarang;
+use App\Services\HargaAplikatorService;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Forms\Set;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 class BarangForm
@@ -69,7 +72,8 @@ class BarangForm
                                 ->numeric()
                                 ->required()
                                 ->prefix('Rp')
-                                ->default(0),
+                                ->default(0)
+                                ->live(onBlur: true),
                         ]),
                     ]),
 
@@ -84,8 +88,9 @@ class BarangForm
                                 ->directory('barang')
                                 ->disk('public')
                                 ->maxSize(2048)
-                                ->imageResizeMode('cover')
-                                ->imageCropAspectRatio('1:1')
+                                ->automaticallyResizeImagesMode('cover')
+                                ->imageAspectRatio('1:1')
+                                ->automaticallyCropImagesToAspectRatio()
                                 ->helperText('Format JPG, PNG, atau WebP (Maksimal 2MB). Ditampilkan pada katalog kasir.')
                                 ->columnSpan(1),
 
@@ -173,14 +178,38 @@ class BarangForm
                                         ->preload()
                                         ->required()
                                         ->distinct()
-                                        ->disableOptionsWhenSelectedInSiblingRepeaterItems(),
+                                        ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                                        ->live()
+                                        ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                            if (! $state) {
+                                                return;
+                                            }
+
+                                            $hargaDasar = (int) ($get('../../harga_jual') ?? 0);
+                                            $aplikator = Aplikator::find($state);
+
+                                            if ($aplikator) {
+                                                $komisi = (float) $aplikator->persentase_komisi;
+                                                $hargaKalkulasi = app(HargaAplikatorService::class)->hitungHarga($hargaDasar, $komisi);
+                                                $set('harga_jual', $hargaKalkulasi);
+                                            }
+                                        }),
 
                                     TextInput::make('harga_jual')
                                         ->label('Harga Jual Delivery')
                                         ->numeric()
                                         ->prefix('Rp')
                                         ->required()
-                                        ->helperText('Harga yang berlaku saat menu ini dipesan melalui aplikator tersebut'),
+                                        ->helperText(function (Get $get) {
+                                            $aplikatorId = $get('aplikator_id');
+                                            if ($aplikatorId) {
+                                                $aplikator = Aplikator::find($aplikatorId);
+                                                if ($aplikator && (float) $aplikator->persentase_komisi > 0) {
+                                                    return "Otomatis dihitung: Harga dasar + komisi {$aplikator->nama_aplikator} ({$aplikator->persentase_komisi}%). Dapat disesuaikan secara manual.";
+                                                }
+                                            }
+                                            return 'Harga yang berlaku saat menu ini dipesan melalui aplikator tersebut';
+                                        }),
                                 ]),
                             ])
                             ->columns(1)
