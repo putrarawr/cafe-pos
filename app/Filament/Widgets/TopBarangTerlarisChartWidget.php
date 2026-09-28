@@ -11,7 +11,9 @@ class TopBarangTerlarisChartWidget extends ChartWidget
 {
     protected ?string $heading = '5 Barang Terlaris (Top Selling)';
 
-    protected static ?int $sort = 5;
+    protected static ?int $sort = 7;
+
+    protected int|string|array $columnSpan = 1;
 
     public ?string $filter = 'all';
 
@@ -55,11 +57,11 @@ class TopBarangTerlarisChartWidget extends ChartWidget
                     'label' => 'Total Terjual (Item)',
                     'data' => $data,
                     'backgroundColor' => [
-                        'rgba(16, 185, 129, 0.85)', // Emerald
-                        'rgba(99, 102, 241, 0.85)', // Indigo
-                        'rgba(245, 158, 11, 0.85)', // Amber
-                        'rgba(236, 72, 153, 0.85)', // Pink
-                        'rgba(14, 165, 233, 0.85)', // Sky
+                        'rgba(16, 185, 129, 0.85)',
+                        'rgba(99, 102, 241, 0.85)',
+                        'rgba(245, 158, 11, 0.85)',
+                        'rgba(236, 72, 153, 0.85)',
+                        'rgba(14, 165, 233, 0.85)',
                     ],
                     'borderColor' => [
                         '#10b981',
@@ -80,12 +82,13 @@ class TopBarangTerlarisChartWidget extends ChartWidget
     {
         return RawJs::make(<<<JS
             {
+                indexAxis: 'y',
                 animation: {
                     duration: 2000,
                     easing: 'easeOutQuart'
                 },
                 animations: {
-                    y: {
+                    x: {
                         duration: 2000,
                         from: 0
                     }
@@ -102,7 +105,7 @@ class TopBarangTerlarisChartWidget extends ChartWidget
                     }
                 },
                 scales: {
-                    y: {
+                    x: {
                         beginAtZero: true,
                         ticks: {
                             precision: 0

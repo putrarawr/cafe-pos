@@ -13,6 +13,10 @@ class MetodePembayaranChartWidget extends ChartWidget
 
     protected static ?int $sort = 4;
 
+    protected int|string|array $columnSpan = 'full';
+
+    protected ?string $maxHeight = '250px';
+
     public ?string $filter = 'all';
 
     protected function getFilters(): ?array
@@ -76,7 +80,7 @@ class MetodePembayaranChartWidget extends ChartWidget
                 plugins: {
                     legend: {
                         display: true,
-                        position: 'bottom'
+                        position: 'right'
                     },
                     tooltip: {
                         enabled: true,
