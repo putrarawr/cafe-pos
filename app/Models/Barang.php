@@ -21,6 +21,7 @@ class Barang extends Model
         'bisa_dijual' => true,
         'butuh_proses' => false,
         'is_default_kemasan' => false,
+        'stok_minimum' => 20,
     ];
 
     public function getActivitylogOptions(): LogOptions
@@ -39,6 +40,7 @@ class Barang extends Model
                 'bisa_dijual',
                 'harga_jual',
                 'satuan',
+                'stok_minimum',
             ])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
@@ -50,6 +52,7 @@ class Barang extends Model
             'butuh_proses' => 'boolean',
             'bisa_dijual' => 'boolean',
             'is_default_kemasan' => 'boolean',
+            'stok_minimum' => 'integer',
         ];
     }
 
@@ -123,7 +126,7 @@ class Barang extends Model
     public function gudangs()
     {
         return $this->belongsToMany(Gudang::class, 'barang_gudang')
-            ->withPivot('stok')
+            ->withPivot(['stok', 'stok_minimum'])
             ->withTimestamps();
     }
 

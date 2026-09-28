@@ -27,10 +27,13 @@ class StokService
                 ->update(['stok' => $saldoBaru, 'updated_at' => now()]);
         } else {
             $saldoBaru = $jumlah;
+            $barang = Barang::find($barangId);
+            $stokMin = (int) ($barang?->stok_minimum ?? 20);
             DB::table('barang_gudang')->insert([
                 'barang_id' => $barangId,
                 'gudang_id' => $gudangId,
                 'stok' => $saldoBaru,
+                'stok_minimum' => $stokMin,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -64,9 +67,15 @@ class StokService
             DB::table('barang_gudang')->where('id', $baris->id)
                 ->update(['stok' => $saldoBaru, 'updated_at' => now()]);
         } else {
+            $barang = Barang::find($barangId);
+            $stokMin = (int) ($barang?->stok_minimum ?? 20);
             DB::table('barang_gudang')->insert([
-                'barang_id' => $barangId, 'gudang_id' => $gudangId,
-                'stok' => $saldoBaru, 'created_at' => now(), 'updated_at' => now(),
+                'barang_id' => $barangId,
+                'gudang_id' => $gudangId,
+                'stok' => $saldoBaru,
+                'stok_minimum' => $stokMin,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
         }
 

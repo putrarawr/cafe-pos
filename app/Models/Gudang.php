@@ -26,7 +26,7 @@ class Gudang extends Model
     public function barangs()
     {
         return $this->belongsToMany(Barang::class, 'barang_gudang')
-            ->withPivot('stok')
+            ->withPivot(['stok', 'stok_minimum'])
             ->withTimestamps();
     }
 }

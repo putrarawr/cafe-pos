@@ -161,6 +161,10 @@ class KasirController extends Controller
                 'satuan' => $b->satuan ?? 'Pcs',
                 'units' => $b->getAvailableUnits(),
                 'stok' => $b->gudangs->mapWithKeys(fn($g) => [$g->id => (int) $g->pivot->stok]),
+                'stok_minimum' => (int) ($b->stok_minimum ?? ($b->tipe_barang === 'barang_jadi' ? 0 : 20)),
+                'stok_minimum_gudang' => $b->gudangs->mapWithKeys(fn($g) => [
+                    $g->id => (int) ($g->pivot->stok_minimum ?? $b->stok_minimum ?? ($b->tipe_barang === 'barang_jadi' ? 0 : 20))
+                ]),
             ])
             ->all();
     }

@@ -3,9 +3,13 @@
 namespace App\Filament\Resources\Barangs\Schemas;
 
 use App\Models\Aplikator;
+use App\Models\Barang;
+use App\Models\Gudang;
 use App\Models\JenisBarang;
 use App\Services\HargaAplikatorService;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -18,6 +22,92 @@ use Filament\Schemas\Schema;
 
 class BarangForm
 {
+    public static function getUnitOptions(Get|callable $get, ?Barang $record = null): array
+    {
+        $getVal = fn (string $key) => $get instanceof Get ? $get($key) : (is_callable($get) ? $get($key) : null);
+
+        $options = [];
+        $s1 = $getVal('satuan') ?: ($record?->satuan ?? 'Pcs');
+        $options[$s1] = "{$s1} (Level 1)";
+
+        $s2 = $getVal('satuan_2') ?: $record?->satuan_2;
+        if (filled($s2)) {
+            $options[$s2] = "{$s2} (Level 2)";
+        }
+
+        $s3 = $getVal('satuan_3') ?: $record?->satuan_3;
+        if (filled($s3)) {
+            $options[$s3] = "{$s3} (Level 3)";
+        }
+
+        $s4 = $getVal('satuan_4') ?: $record?->satuan_4;
+        if (filled($s4)) {
+            $options[$s4] = "{$s4} (Level 4)";
+        }
+
+        return $options;
+    }
+
+    public static function getFaktorForUnit(string $satuanNama, Get|callable $get, ?Barang $record = null): int
+    {
+        $getVal = fn (string $key) => $get instanceof Get ? $get($key) : (is_callable($get) ? $get($key) : null);
+
+        $s1 = $getVal('satuan') ?: ($record?->satuan ?? 'Pcs');
+        if ($satuanNama === $s1 || empty($satuanNama)) {
+            return 1;
+        }
+
+        $s2 = $getVal('satuan_2') ?: $record?->satuan_2;
+        $isi2 = max(1, (int) ($getVal('isi_satuan_2') ?: ($record?->isi_satuan_2 ?? 1)));
+        if ($satuanNama === $s2) {
+            return $isi2;
+        }
+
+        $s3 = $getVal('satuan_3') ?: $record?->satuan_3;
+        $isi3 = max(1, (int) ($getVal('isi_satuan_3') ?: ($record?->isi_satuan_3 ?? 1)));
+        $faktor3 = !empty($s2) ? ($isi3 * $isi2) : $isi3;
+        if ($satuanNama === $s3) {
+            return $faktor3;
+        }
+
+        $s4 = $getVal('satuan_4') ?: $record?->satuan_4;
+        $isi4 = max(1, (int) ($getVal('isi_satuan_4') ?: ($record?->isi_satuan_4 ?? 1)));
+        $faktor4 = $isi4 * $faktor3;
+        if ($satuanNama === $s4) {
+            return $faktor4;
+        }
+
+        return 1;
+    }
+
+    public static function deconstructBaseQtyToBestUnit(int $baseQty, ?Barang $barang): array
+    {
+        $baseSatuan = $barang?->satuan ?? 'Pcs';
+        if (!$barang || $baseQty <= 0) {
+            return [
+                'qty' => $baseQty,
+                'satuan' => $baseSatuan,
+            ];
+        }
+
+        $units = $barang->getAvailableUnits();
+        usort($units, fn($a, $b) => $b['faktor'] <=> $a['faktor']);
+
+        foreach ($units as $u) {
+            if ($u['faktor'] > 1 && $baseQty >= $u['faktor'] && ($baseQty % $u['faktor'] === 0)) {
+                return [
+                    'qty' => (int) ($baseQty / $u['faktor']),
+                    'satuan' => $u['satuan'],
+                ];
+            }
+        }
+
+        return [
+            'qty' => $baseQty,
+            'satuan' => $baseSatuan,
+        ];
+    }
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -116,6 +206,7 @@ class BarangForm
                                         } elseif ($state === 'barang_jadi') {
                                             $set('bisa_dijual', true);
                                             $set('butuh_proses', true);
+                                            $set('stok_minimum', 0);
                                         } elseif ($state === 'barang_dagang') {
                                             $set('bisa_dijual', true);
                                             $set('butuh_proses', false);
@@ -349,6 +440,152 @@ class BarangForm
                                         ->prefix('Rp')
                                         ->placeholder('Otomatis jika kosong'),
                                 ]),
+                            ]),
+                    ]),
+
+                Section::make('Ambang Batas Stok Minimum (Global & Gudang)')
+                    ->description('Atur batas minimum stok fisik untuk memicu peringatan stok menipis pada sistem dasbor dan kasir (isi 0 atau matikan toggle untuk menonaktifkan pemantauan). Anda dapat memilih satuan yang diinginkan, dan nilai akan otomatis dikonversi ke Satuan Dasar saat disimpan.')
+                    ->collapsible()
+                    ->columnSpanFull()
+                    ->hidden(fn (Get $get) => $get('tipe_barang') === 'barang_jadi')
+                    ->schema([
+                        Hidden::make('stok_minimum')
+                            ->default(20),
+
+                        Section::make('Ambang Batas Global (Seluruh Toko)')
+                            ->compact()
+                            ->schema([
+                                Grid::make(2)->schema([
+                                    Toggle::make('pantau_stok_global')
+                                        ->label(fn (Get $get) => $get('pantau_stok_global') ? 'Pemantauan Global: AKTIF' : 'Pemantauan Global: DIMATIKAN')
+                                        ->helperText(fn (Get $get) => $get('pantau_stok_global')
+                                            ? 'Peringatan aktif jika akumulasi seluruh stok toko berada di bawah ambang batas.'
+                                            : 'Pemantauan stok global dimatikan (peringatan untuk toko tidak akan muncul).')
+                                        ->dehydrated(false)
+                                        ->live()
+                                        ->default(true)
+                                        ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                            if ($get('sinkron_ke_gudang')) {
+                                                $gudangs = Gudang::all();
+                                                foreach ($gudangs as $g) {
+                                                    $set("status_pantau_gudang.{$g->id}", (bool) $state);
+                                                }
+                                            }
+                                        }),
+
+                                    Toggle::make('sinkron_ke_gudang')
+                                        ->label('Samakan ke Semua Gudang')
+                                        ->helperText('Otomatis menyamakan status on/off, jumlah, dan satuan di seluruh gudang di bawah.')
+                                        ->dehydrated(false)
+                                        ->live()
+                                        ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                            if ($state) {
+                                                $globalActive = (bool) $get('pantau_stok_global');
+                                                $globalQty = (int) ($get('stok_minimum_display') ?? 20);
+                                                $globalUnit = $get('satuan_stok_minimum') ?: ($get('satuan') ?: 'Pcs');
+                                                $gudangs = Gudang::all();
+                                                foreach ($gudangs as $g) {
+                                                    $set("status_pantau_gudang.{$g->id}", $globalActive);
+                                                    $set("stok_minimum_gudang_display.{$g->id}", $globalQty);
+                                                    $set("satuan_stok_minimum_gudang.{$g->id}", $globalUnit);
+                                                }
+                                            }
+                                        }),
+                                ]),
+
+                                Grid::make(2)
+                                    ->visible(fn (Get $get) => (bool) $get('pantau_stok_global'))
+                                    ->schema([
+                                        TextInput::make('stok_minimum_display')
+                                            ->label('Batas Stok Global')
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->default(20)
+                                            ->dehydrated(false)
+                                            ->live()
+                                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                                if ($get('sinkron_ke_gudang')) {
+                                                    $gudangs = Gudang::all();
+                                                    foreach ($gudangs as $g) {
+                                                        $set("stok_minimum_gudang_display.{$g->id}", $state);
+                                                    }
+                                                }
+                                            })
+                                            ->helperText(function (Get $get, ?Barang $record) {
+                                                $qty = (int) ($get('stok_minimum_display') ?? 0);
+                                                $unit = $get('satuan_stok_minimum') ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
+                                                $faktor = BarangForm::getFaktorForUnit($unit, $get, $record);
+                                                $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
+                                                $total = $qty * $faktor;
+                                                return "{$total} {$baseSat} (Satuan Dasar)";
+                                            }),
+
+                                        Select::make('satuan_stok_minimum')
+                                            ->label('Satuan Global')
+                                            ->options(fn (Get $get, ?Barang $record) => BarangForm::getUnitOptions($get, $record))
+                                            ->default(fn (Get $get, ?Barang $record) => $get('satuan') ?: ($record?->satuan ?? 'Pcs'))
+                                            ->dehydrated(false)
+                                            ->live()
+                                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                                if ($get('sinkron_ke_gudang')) {
+                                                    $gudangs = Gudang::all();
+                                                    foreach ($gudangs as $g) {
+                                                        $set("satuan_stok_minimum_gudang.{$g->id}", $state);
+                                                    }
+                                                }
+                                            }),
+                                    ]),
+                            ]),
+
+                        Section::make('Batas Stok Minimum Khusus Per Gudang')
+                            ->description('Tentukan ambang batas minimum dan satuan untuk masing-masing gudang (pemicu mutasi internal toko).')
+                            ->schema([
+                                Grid::make(2)->schema(function () {
+                                    $gudangs = Gudang::all();
+                                    $fields = [];
+                                    foreach ($gudangs as $gudang) {
+                                        $fields[] = Section::make($gudang->nama_gudang)
+                                            ->compact()
+                                            ->schema([
+                                                Toggle::make("status_pantau_gudang.{$gudang->id}")
+                                                    ->label(fn (Get $get) => $get("status_pantau_gudang.{$gudang->id}") ? "Pemantauan {$gudang->nama_gudang}: AKTIF" : "Pemantauan {$gudang->nama_gudang}: DIMATIKAN")
+                                                    ->helperText(fn (Get $get) => $get("status_pantau_gudang.{$gudang->id}")
+                                                        ? "Peringatan stok menipis aktif khusus {$gudang->nama_gudang}."
+                                                        : "Pemantauan khusus {$gudang->nama_gudang} sedang DIMATIKAN.")
+                                                    ->dehydrated(false)
+                                                    ->live()
+                                                    ->default(true),
+
+                                                Grid::make(2)
+                                                    ->visible(fn (Get $get) => (bool) $get("status_pantau_gudang.{$gudang->id}"))
+                                                    ->schema([
+                                                        TextInput::make("stok_minimum_gudang_display.{$gudang->id}")
+                                                            ->label('Batas Stok')
+                                                            ->numeric()
+                                                            ->minValue(0)
+                                                            ->default(20)
+                                                            ->dehydrated(false)
+                                                            ->live()
+                                                            ->helperText(function (Get $get, ?Barang $record) use ($gudang) {
+                                                                $qty = (int) ($get("stok_minimum_gudang_display.{$gudang->id}") ?? 0);
+                                                                $unit = $get("satuan_stok_minimum_gudang.{$gudang->id}") ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
+                                                                $faktor = BarangForm::getFaktorForUnit($unit, $get, $record);
+                                                                $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
+                                                                $total = $qty * $faktor;
+                                                                return "{$total} {$baseSat} (Satuan Dasar)";
+                                                            }),
+
+                                                        Select::make("satuan_stok_minimum_gudang.{$gudang->id}")
+                                                            ->label('Satuan')
+                                                            ->options(fn (Get $get, ?Barang $record) => BarangForm::getUnitOptions($get, $record))
+                                                            ->default(fn (Get $get, ?Barang $record) => $get('satuan') ?: ($record?->satuan ?? 'Pcs'))
+                                                            ->dehydrated(false)
+                                                            ->live(),
+                                                    ]),
+                                            ]);
+                                    }
+                                    return $fields;
+                                }),
                             ]),
                     ]),
             ]);

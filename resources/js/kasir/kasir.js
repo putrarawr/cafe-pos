@@ -352,7 +352,7 @@ let pendingHapusId = null;
 let pendingNontunaiPayload = null;
 let pendingDiskonPayload = null;
 const DISKON_BESAR_PERSEN = 30;
-const AMBANG_STOK_MENIPIS = 5;
+const DEFAULT_STOK_MINIMUM = 20;
 const collapsedOrderGroups = new Set();
 
 function mintaHapusItem(key) {
@@ -1339,7 +1339,10 @@ function renderProduk() {
             const stok = stokTersedia(b);
             const isHabisStatus = b.status === 'habis';
             const habis = isHabisStatus || stok <= 0;
-            const menipis = !habis && stok <= AMBANG_STOK_MENIPIS;
+            const minStok = (b.stok_minimum_gudang && state.gudangId in b.stok_minimum_gudang)
+                ? Number(b.stok_minimum_gudang[state.gudangId])
+                : Number(b.stok_minimum ?? DEFAULT_STOK_MINIMUM);
+            const menipis = !habis && minStok > 0 && stok <= minStok;
             const sorot = highlightedIdx === idx ? 'ring-2 ring-zinc-900 shadow-lg shadow-zinc-900/15' : '';
             const sorotCart = cartSelId === b.id;
             const kelasRing = sorot || (sorotCart ? 'ring-2 ring-zinc-900' : '');
@@ -1374,7 +1377,9 @@ function renderProduk() {
                         ? `<div class="absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-md bg-black text-white flex items-center justify-center text-[10px] font-bold shadow-xs">
                             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
                            </div>`
-                        : `<div class="absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-md border border-zinc-300/80 bg-white/90 flex items-center justify-center group-hover:border-zinc-700 transition-colors"></div>`
+                        : menipis
+                            ? `<span class="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold shadow-xs">Sisa ${stok}</span>`
+                            : `<div class="absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-md border border-zinc-300/80 bg-white/90 flex items-center justify-center group-hover:border-zinc-700 transition-colors"></div>`
                     }
 
                     <!-- Badge jumlah item jika ada di keranjang -->
@@ -1411,7 +1416,9 @@ function renderProduk() {
                         <div class="flex items-center gap-1 shrink-0 ${habis ? 'text-red-500' : menipis ? 'text-amber-600' : 'text-zinc-500'}">
                             ${habis
                                 ? `<span class="text-[11px] font-bold">Stok 0</span>`
-                                : `<span class="text-[11px] font-medium text-zinc-400">Stok:</span><span class="text-xs font-bold text-zinc-800 tabular-nums">${stok}</span>`
+                                : menipis
+                                    ? `<span class="text-[11px] font-medium text-amber-600">Stok:</span><span class="text-xs font-bold text-amber-600 tabular-nums">${stok}</span>`
+                                    : `<span class="text-[11px] font-medium text-zinc-400">Stok:</span><span class="text-xs font-bold text-zinc-800 tabular-nums">${stok}</span>`
                             }
                         </div>
                     </div>

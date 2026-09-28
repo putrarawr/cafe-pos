@@ -15,6 +15,7 @@ class DummyDataSeeder extends Seeder
             MasterDataSeeder::class,
             PromoBonusSeeder::class,
             TransaksiSeeder::class,
+            TestStokMenipisSeeder::class,
         ]);
     }
 }
