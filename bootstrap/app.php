@@ -15,7 +15,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo('/kasir/login');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Hanya request AJAX kasir yang boleh dapat JSON error. Kalau $request->is('kasir/*')
+        // tanpa expectsJson(), buka /kasir di browser saat belum login akan dirender
+        // sebagai JSON {"message":"Unauthenticated."} dan override redirectGuestsTo
+        // di atas, jadi kasir tidak pernah sampai ke halaman login.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*') || $request->is('kasir/*') || $request->expectsJson(),
+            fn (Request $request) => $request->is('api/*')
+                || ($request->is('kasir/*') && $request->expectsJson()),
         );
     })->create();

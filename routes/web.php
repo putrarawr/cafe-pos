@@ -19,5 +19,11 @@ Route::middleware('auth:karyawan,web')->group(function () {
     Route::get('/kasir/riwayat', [KasirController::class, 'riwayat'])->name('kasir.riwayat');
     Route::post('/kasir/riwayat/{id}/cetak', [KasirController::class, 'verifikasiCetak'])->name('kasir.riwayat.cetak');
     Route::post('/kasir/simpan', [KasirController::class, 'simpan'])->name('kasir.simpan');
+
+    // --- Order Pending (keranjang ditahan, stok di-reserve) ---
+    Route::get('/kasir/order-pending', [KasirController::class, 'daftarOrderPending'])->name('kasir.order-pending.index');
+    Route::post('/kasir/order-pending', [KasirController::class, 'simpanOrderPending'])->name('kasir.order-pending.simpan');
+    Route::get('/kasir/order-pending/{id}', [KasirController::class, 'detailOrderPending'])->name('kasir.order-pending.detail');
+    Route::post('/kasir/order-pending/{id}/batal', [KasirController::class, 'batalkanOrderPending'])->name('kasir.order-pending.batal');
 });
 

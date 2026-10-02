@@ -7,6 +7,7 @@ use App\Models\Barang;
 use App\Models\Gudang;
 use App\Models\HistoriHpp;
 use App\Models\KartuStok;
+use App\Models\OrderPending;
 use App\Models\Pembelian;
 use App\Models\PerpindahanBarang;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +82,46 @@ class StokService
 
         $this->catatKartu($barangId, $gudangId, -$jumlah, $saldoBaru,
             $konteks['jenis'] ?? KartuStok::JENIS_KELUAR, $konteks);
+    }
+
+    /**
+     * Total qty (satuan dasar) yang sedang di-reserve oleh order pending.
+     *
+     * Order pending tidak menyentuh stok fisik `barang_gudang.stok`; ia cuma
+     * "menahan" barang supaya kasir lain tidak bisa ambil barang yang sama.
+     * Karena itu stok tersedia = stok fisik - hasil fungsi ini.
+     *
+     * @param  int|null  $excludeOrderId  order pending yang sedang dilanjutkan
+     *                                    (reservasinya sendiri tidak boleh mengurangi jatah)
+     * @return array<int, int>  [barang_id => jumlah_dasar]
+     */
+    public function reservasiAktif(int $gudangId, ?int $excludeOrderId = null): array
+    {
+        $query = DB::table('order_pending_item as item')
+            ->join('order_pending as o', 'o.id', '=', 'item.order_pending_id')
+            ->where('o.status', OrderPending::STATUS_PENDING)
+            ->where('item.gudang_id', $gudangId)
+            ->groupBy('item.barang_id')
+            ->select('item.barang_id', DB::raw('SUM(item.jumlah_dasar) as qty'));
+
+        if ($excludeOrderId) {
+            $query->where('o.id', '!=', $excludeOrderId);
+        }
+
+        return $query->pluck('qty', 'barang_id')
+            ->map(fn($qty) => (int) $qty)
+            ->all();
+    }
+
+    /**
+     * Stok fisik barang di satu gudang.
+     */
+    public function stokFisik(int $barangId, int $gudangId): int
+    {
+        return (int) DB::table('barang_gudang')
+            ->where('barang_id', $barangId)
+            ->where('gudang_id', $gudangId)
+            ->value('stok');
     }
 
     public function validasiDelta(array $deltas): void

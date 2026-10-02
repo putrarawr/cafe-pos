@@ -267,14 +267,42 @@
                 
                 {{-- Header --}}
                 <div class="h-16 shrink-0 px-6 border-b border-zinc-100 flex items-center justify-between">
-                    <div class="flex items-center gap-2.5">
-                        <h2 class="text-xl font-bold tracking-tight text-zinc-900">Pesanan</h2>
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <h2 class="text-lg font-bold tracking-tight text-zinc-900 truncate">Pesanan</h2>
                         <span id="badge-cart-count"
-                            class="hidden min-w-5 h-5 px-1.5 rounded-full bg-zinc-900 text-white text-[11px] font-bold flex items-center justify-center tabular-nums"></span>
+                            class="hidden min-w-5 h-5 px-1.5 rounded-full bg-zinc-900 text-white text-[11px] font-bold flex items-center justify-center tabular-nums shrink-0"></span>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button id="btn-reset" type="button" title="Kosongkan keranjang"
-                            class="text-xs font-semibold text-zinc-400 hover:text-red-600 transition-colors cursor-pointer px-1 py-0.5">Kosongkan</button>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <button id="btn-daftar-order" type="button" title="Lihat daftar Order Pending yang sedang ditahan"
+                            class="relative inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 hover:text-zinc-900 border border-zinc-200 hover:border-zinc-300 rounded-lg px-2.5 py-1.5 transition-colors cursor-pointer">
+                            <span>Daftar Order</span>
+                            <span id="badge-order-pending"
+                                class="hidden min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums"></span>
+                        </button>
+                        <button id="btn-reset" type="button" title="Kosongkan keranjang" aria-label="Kosongkan keranjang"
+                            class="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                {{-- Banner order pending yang sedang dimuat --}}
+                <div id="banner-order-aktif" class="hidden shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-2.5">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="min-w-0 flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-amber-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                            </svg>
+                            <span class="text-[11px] font-bold text-amber-800 truncate">
+                                Melanjutkan <span id="banner-order-kode" class="tabular-nums"></span>
+                            </span>
+                        </div>
+                        <button id="btn-lepas-order-aktif" type="button"
+                            class="shrink-0 text-[10px] font-bold text-amber-700 hover:text-amber-900 underline cursor-pointer">
+                            Lepas
+                        </button>
                     </div>
                 </div>
 
@@ -319,7 +347,7 @@
                             <span class="text-zinc-500 font-medium">Subtotal</span>
                             <span id="lbl-total" class="font-bold text-zinc-900 tabular-nums">Rp 0</span>
                         </div>
-                        <div id="row-diskon-nota" class="hidden flex justify-between items-center gap-3">
+                        <div id="row-diskon-nota" class="flex justify-between items-center gap-3">
                             <span class="text-zinc-500 font-medium">Diskon</span>
                             <div class="flex items-center gap-2">
                                 <input id="input-diskon" type="text" inputmode="numeric" placeholder="0%"
@@ -352,6 +380,11 @@
                             <span id="lbl-neto" class="inline-block origin-right text-xl font-black tracking-tight text-zinc-900 tabular-nums">Rp 0</span>
                         </div>
                     </div>
+
+                    <button id="btn-order-pending" type="button" title="Tahan pesanan ini sebagai Order (stok ditahan, belum dibayar)"
+                        class="w-full flex items-center justify-center border border-zinc-200 hover:border-zinc-900 hover:bg-zinc-100 active:scale-[0.99] text-zinc-700 font-bold rounded-xl py-2 text-xs transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none">
+                        <span>Order</span>
+                    </button>
 
                     {{-- Payments Section --}}
                     <div class="pt-2 border-t border-zinc-200/80 space-y-2.5">
@@ -623,6 +656,10 @@
                     <kbd class="kbd-shortcut">F9</kbd>
                 </div>
                 <div class="flex items-center justify-between gap-4 py-2.5">
+                    <span class="text-sm text-zinc-600">Buka daftar Order Pending</span>
+                    <span class="flex items-center gap-1"><kbd class="kbd-shortcut">Ctrl</kbd><span class="text-xs text-zinc-300 font-semibold">+</span><kbd class="kbd-shortcut">O</kbd></span>
+                </div>
+                <div class="flex items-center justify-between gap-4 py-2.5">
                     <span class="text-sm text-zinc-600">Tutup modal</span>
                     <kbd class="kbd-shortcut">Esc</kbd>
                 </div>
@@ -713,6 +750,43 @@
             </div>
             <div class="px-6 py-4 border-t border-zinc-100">
                 <button id="btn-tutup-riwayat-bawah" type="button"
+                    class="w-full border border-zinc-200 hover:border-zinc-900 active:scale-[0.99] text-zinc-700 font-bold rounded-xl py-3 text-sm transition-colors cursor-pointer">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- MODAL ORDER PENDING: pesanan ditahan, stok sudah dikunci --}}
+    <div id="modal-order-pending" class="hidden anim-backdrop fixed inset-0 bg-zinc-950/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="anim-scale-in bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
+                <div>
+                    <h3 class="text-sm font-bold tracking-tight">Order Pending</h3>
+                    <p class="text-[11px] text-zinc-500 mt-0.5">Pesanan ditahan &mdash; stok sudah dikunci, belum dipotong</p>
+                </div>
+                <button id="btn-tutup-order-pending" type="button"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                        <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div id="order-pending-memuat" class="px-6 py-10 text-center text-xs text-zinc-400">Memuat order pending...</div>
+
+            <div id="order-pending-kosong" class="hidden px-6 py-12 text-center">
+                <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+                    </svg>
+                </div>
+                <p class="text-sm font-bold text-zinc-700">Belum ada order pending</p>
+                <p class="text-xs text-zinc-400 mt-0.5">Tekan <span class="font-bold">Order</span> di area pembayaran untuk menahan pesanan saat ini</p>
+            </div>
+
+            <div id="order-pending-list" class="hidden flex-1 overflow-y-auto divide-y divide-zinc-100"></div>
+
+            <div class="px-6 py-4 border-t border-zinc-100">
+                <button id="btn-tutup-order-pending-bawah" type="button"
                     class="w-full border border-zinc-200 hover:border-zinc-900 active:scale-[0.99] text-zinc-700 font-bold rounded-xl py-3 text-sm transition-colors cursor-pointer">Tutup</button>
             </div>
         </div>

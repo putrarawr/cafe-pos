@@ -14,6 +14,10 @@ import {
     getAplikator,
     getRiwayat,
     simpanPenjualan,
+    simpanOrderPending,
+    getOrderPending,
+    getOrderPendingDetail,
+    batalkanOrderPending,
     verifikasiCetakUlang,
     USE_MOCK,
 } from './api.js';
@@ -44,6 +48,9 @@ const state = {
     biayaKirim: 0,
     aplikatorId: null,
     jenisPesanan: 'dine_in',
+    // order pending: daftar order yang ditahan + order yang lagi dimuat ke keranjang
+    orderPending: [],
+    orderAktif: null,
 };
 
 const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -115,8 +122,30 @@ function stokBarang(barang) {
     return barang.stok?.[state.gudangId] ?? 0;
 }
 
+/**
+ * Qty yang sudah di-reserve order pending milik order LAIN.
+ * Reservasi order yang lagi aktif dimuat ke keranjang tidak dihitung,
+ * karena jatah barang itu memang milik kasir yang sedang melanjutkannya.
+ */
+function stokReservasi(barang) {
+    if (!state.gudangId) return 0;
+    const total = Number(barang.stok_reservasi?.[state.gudangId] ?? 0);
+    const milikSendiri = state.orderAktif?.items
+        ?.filter((it) => Number(it.barang_id) === Number(barang.id))
+        .reduce((sum, it) => {
+            const units = getUnitsForBarang(barang);
+            const uObj = units.find((u) => u.satuan === it.satuan);
+            return sum + it.jumlah * (uObj ? uObj.faktor : 1);
+        }, 0) ?? 0;
+    return Math.max(0, total - milikSendiri);
+}
+
+/**
+ * Stok yang masih boleh dipilih kasir:
+ * stok fisik - yang di-reserve order lain - yang sudah ada di keranjang.
+ */
 function stokTersedia(barang) {
-    const dasar = stokBarang(barang);
+    const dasar = Math.max(0, stokBarang(barang) - stokReservasi(barang));
     const lines = state.cart.filter((i) => Number(i.barang_id) === Number(barang.id));
     if (!lines.length) return dasar;
     const units = getUnitsForBarang(barang);
@@ -132,8 +161,13 @@ function namaGudangSekarang() {
 }
 
 function gudangStokTersedia(barang) {
+    // pakai stok TERSEDIA, bukan stok fisik: gudang yang isinya sudah habis
+    // di-reserve order lain tidak ditampilkan sebagai pilihan.
     return state.gudang
-        .filter((g) => (barang.stok?.[g.id] ?? 0) > 0)
+        .filter((g) => {
+            const tersedia = barang.stok_tersedia?.[g.id] ?? barang.stok?.[g.id] ?? 0;
+            return Number(tersedia) > 0;
+        })
         .map((g) => g.nama_gudang);
 }
 
@@ -143,7 +177,7 @@ function gudangStokTersedia(barang) {
 function getCartProductGroups() {
     const groupMap = new Map();
 
-    state.cart.forEach((item) => {
+    state.cart.forEach((item, idx) => {
         if (item.is_kemasan || item.is_bonus) return;
 
         const bId = Number(item.barang_id);
@@ -164,6 +198,18 @@ function getCartProductGroups() {
                 delivery_qty: 0,
                 totalQty: 0,
                 totalDiskon: 0,
+                // Satu baris tipe = satu baris state.cart, jadi key/satuan/indeks
+                // harus ikut per tipe. Dropdown satuan dan tombol hapus bekerja
+                // per baris state.cart, bukan per kartu produk.
+                keyDineIn: null,
+                keyTakeAway: null,
+                keyDelivery: null,
+                satuanDineIn: null,
+                satuanTakeAway: null,
+                satuanDelivery: null,
+                idxDineIn: -1,
+                idxTakeAway: -1,
+                idxDelivery: -1,
             });
         }
 
@@ -172,12 +218,21 @@ function getCartProductGroups() {
         if (tipe === 'dine_in') {
             grp.dine_in_qty += item.jumlah;
             grp.hargaDineIn = item.harga;
+            grp.keyDineIn = item.key;
+            grp.satuanDineIn = item.satuan;
+            grp.idxDineIn = idx;
         } else if (tipe === 'take_away') {
             grp.take_away_qty += item.jumlah;
             grp.hargaTakeAway = item.harga;
+            grp.keyTakeAway = item.key;
+            grp.satuanTakeAway = item.satuan;
+            grp.idxTakeAway = idx;
         } else if (tipe === 'delivery') {
             grp.delivery_qty += item.jumlah;
             grp.hargaDelivery = item.harga;
+            grp.keyDelivery = item.key;
+            grp.satuanDelivery = item.satuan;
+            grp.idxDelivery = idx;
         }
 
         grp.totalQty += item.jumlah;
@@ -408,6 +463,9 @@ function resetTransaksi() {
     state.biayaKirim = 0;
     state.aplikatorId = null;
     state.jenisPesanan = 'dine_in';
+    // order yang lagi ditahan sudah selesai (dibayar atau dibatalkan),
+    // jadi lepas dari keranjang. Barisnya tetap ada di daftar order pending.
+    state.orderAktif = null;
     collapsedOrderGroups.clear();
     bonusToastShown.clear();
     document.querySelectorAll('input[name="bank_transfer"]').forEach((radio) => {
@@ -507,6 +565,9 @@ function buildPayload() {
         alamat_pengiriman: state.alamatPengiriman || null,
         biaya_kirim: state.biayaKirim || 0,
         aplikator_id: state.aplikatorId,
+        // kalau keranjang ini hasil melanjutkan order pending, server tahu
+        // order mana yang harus ditandai selesai setelah dibayar
+        order_pending_id: state.orderAktif?.id ?? null,
         details: state.cart.map((i) => ({
             barang_id: i.barang_id,
             nama_barang: i.nama_barang,
@@ -620,9 +681,14 @@ async function simpanTransaksi(payload) {
             const units = b ? getUnitsForBarang(b) : [];
             const uObj = units.find((u) => u.satuan === d.satuan);
             const faktor = uObj ? uObj.faktor : 1;
-            if (b && b.stok[d.gudang_id] != null) b.stok[d.gudang_id] -= (d.jumlah * faktor);
+            const qty = d.jumlah * faktor;
+            if (b && b.stok[d.gudang_id] != null) b.stok[d.gudang_id] -= qty;
+            // stok_tersedia juga harus turun: reservasi order ini baru saja
+            // dilepas server, jadi pemotongannya paralel sama.
+            if (b && b.stok_tersedia?.[d.gudang_id] != null) b.stok_tersedia[d.gudang_id] -= qty;
         }
         resetTransaksi();
+        await muatUlangOrderPending();
     } catch (e) {
         toast(e.message ?? 'Gagal menyimpan transaksi', true);
         renderCart();
@@ -633,6 +699,278 @@ async function simpanTransaksi(payload) {
             btn.textContent = 'Bayar';
         }
         renderCart();
+    }
+}
+
+// ------------------------- ORDER PENDING -------------------------
+//
+// Order pending = keranjang yang ditahan, belum dibayar. Stok fisiknya tidak
+// dikurangi; server menahan "hak pakai" lewat tabel order_pending_item, jadi
+// kasir lain tidak bisa memilih barang yang sama. Bayar -> jadi penjualan,
+// Batal -> reservasi dilepas.
+
+let orderPendingAktif = false;
+
+function setOrderBadge(jumlah) {
+    const badge = document.getElementById('badge-order-pending');
+    if (!badge) return;
+    badge.textContent = jumlah > 99 ? '99+' : String(jumlah);
+    badge.classList.toggle('hidden', jumlah < 1);
+}
+
+/** Muat ulang daftar order pending + segarkan angka reservasi di state.barang. */
+async function muatUlangOrderPending() {
+    try {
+        const data = await getOrderPending(state.gudangId);
+        state.orderPending = Array.isArray(data?.items) ? data.items : [];
+        renderOrderPendingList();
+        setOrderBadge(state.orderPending.length);
+    } catch (e) {
+        // gagal memuat daftar tidak boleh mengganggu transaksi yang sedang jalan
+        console.warn('Gagal memuat order pending:', e);
+    }
+}
+
+/** Tahan keranjang sekarang sebagai order pending. */
+async function btnSimpanOrderPending() {
+    if (state.cart.length === 0) {
+        toast('Keranjang masih kosong', true);
+        return;
+    }
+    if (!state.gudangId) {
+        toast('Pilih gudang dulu', true);
+        return;
+    }
+    if (state.orderAktif) {
+        toast('Selesaikan dulu order pending yang sedang dibuka', true);
+        return;
+    }
+
+    // Kemasan per item ditambahkan sinkron (bisa async), flush dulu supaya
+    // baris kemasan ikut ke-reserve, bukan hilang.
+    sinkronkanKemasanPerItem();
+
+    const btn = document.getElementById('btn-order-pending');
+    if (btn) {
+        btn.disabled = true;
+        btn.dataset.saving = '1';
+    }
+
+    try {
+        const payload = buildPayload();
+        const order = await simpanOrderPending(payload);
+        toast(`Order ${order.kode_order} disimpan. Stok sudah ditahan.`);
+        resetTransaksi();
+        await muatUlangOrderPending();
+        await muatUlangData(true);
+        bukaModalOrderPending();
+    } catch (e) {
+        toast(e.message ?? 'Gagal menyimpan order pending', true);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            delete btn.dataset.saving;
+        }
+        render();
+    }
+}
+
+/** Buka panel daftar order pending. */
+async function bukaModalOrderPending() {
+    orderPendingAktif = true;
+    document.getElementById('modal-order-pending')?.classList.remove('hidden');
+    await muatUlangOrderPending();
+}
+
+function tutupModalOrderPending() {
+    orderPendingAktif = false;
+    document.getElementById('modal-order-pending')?.classList.add('hidden');
+}
+
+/** Badge jumlah order pending di panel kasir. */
+/**
+ * Lepas order aktif dari keranjang TANPA membatalkan ordernya.
+ * Order tetap pending di server (stok ditahan), kasir tinggal buka lagi nanti.
+ */
+function lepasOrderAktif() {
+    if (!state.orderAktif) return;
+    const ok = window.confirm(
+        `Lepas ${state.orderAktif.kode_order} dari keranjang? Order tetap ditahan dan bisa dilanjutkan nanti.`
+    );
+    if (!ok) return;
+    state.orderAktif = null;
+    state.cart = [];
+    resetTransaksi();
+    toast('Order dilepas dari keranjang, stok tetap ditahan.');
+    render();
+}
+
+function renderBannerOrderAktif() {
+    const banner = document.getElementById('banner-order-aktif');
+    const kode = document.getElementById('banner-order-kode');
+    if (!banner || !kode) return;
+    const ada = !!state.orderAktif;
+    banner.classList.toggle('hidden', !ada);
+    if (ada) kode.textContent = state.orderAktif.kode_order ?? '';
+}
+
+function renderBadgeOrderPendingHeader() {
+    setOrderBadge(state.orderPending.length);
+}
+
+function renderOrderPendingList() {
+    const wrap = document.getElementById('order-pending-list');
+    const kosong = document.getElementById('order-pending-kosong');
+    const muat = document.getElementById('order-pending-memuat');
+    if (!wrap) return;
+
+    if (muat) muat.classList.add('hidden');
+    if (state.orderPending.length === 0) {
+        wrap.innerHTML = '';
+        wrap.classList.add('hidden');
+        kosong?.classList.remove('hidden');
+        renderBadgeOrderPendingHeader();
+        return;
+    }
+
+    kosong?.classList.add('hidden');
+    wrap.classList.remove('hidden');
+    wrap.innerHTML = state.orderPending.map((o) => {
+        const itemNames = (o.items ?? []).map((i) => `${i.nama_barang} ×${i.jumlah}`).join(', ');
+        const jam = o.created_at ? formatJamWib(o.created_at) : '-';
+        return `
+            <div class="px-4 py-3.5 flex items-start gap-3" data-order-row="${o.id}">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-sm font-black text-zinc-900 tabular-nums">${escapeHtml(o.kode_order)}</span>
+                        <span class="text-[10px] font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-md px-1.5 py-0.5">
+                            ${escapeHtml(o.nama_gudang ?? '-')}
+                        </span>
+                    </div>
+                    <p class="text-xs text-zinc-500 mt-1 leading-snug line-clamp-2">${escapeHtml(itemNames || '-')}</p>
+                    <p class="text-[11px] text-zinc-400 mt-1 tabular-nums">
+                        ${escapeHtml(o.nama_kasir ?? '-')} · ${escapeHtml(jam)}
+                    </p>
+                </div>
+                <div class="text-right shrink-0 flex flex-col items-end gap-2">
+                    <span class="text-sm font-black text-zinc-900 tabular-nums">${rupiah(o.neto)}</span>
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" data-order-batal="${o.id}"
+                            class="text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200 rounded-md px-2 py-1 transition-colors cursor-pointer">
+                            Batal
+                        </button>
+                        <button type="button" data-order-lanjut="${o.id}"
+                            class="text-[10px] font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-md px-2.5 py-1 transition-colors cursor-pointer">
+                            Lanjut
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+
+    renderBadgeOrderPendingHeader();
+}
+
+/** Muat isi order pending ke keranjang supaya bisa ditambah barang / dibayar. */
+async function lanjutkanOrderPending(id) {
+    const btn = document.querySelector(`[data-order-lanjut="${id}"]`);
+    if (btn) btn.disabled = true;
+
+    try {
+        const order = await getOrderPendingDetail(id);
+
+        if (state.cart.length > 0) {
+            const ok = window.confirm('Keranjang sekarang akan diganti dengan isi order pending. Lanjutkan?');
+            if (!ok) return;
+        }
+
+        if (order.gudang_id && Number(order.gudang_id) !== Number(state.gudangId)) {
+            if (gudangSetValue) gudangSetValue(order.gudang_id);
+            state.gudangId = Number(order.gudang_id);
+        }
+
+        // Harga TIDAK diambil dari snapshot order. Kita cuma pakai identitas item
+        // lalu biarkan harga dihitung ulang dari master barang (satu sumber kebenaran).
+        state.cart = [];
+        state.orderAktif = order;
+
+        for (const it of order.items ?? []) {
+            const barang = state.barang.find((b) => Number(b.id) === Number(it.barang_id))
+                || state.barangKemasan.find((b) => Number(b.id) === Number(it.barang_id));
+            if (!barang) {
+                toast(`Barang #${it.barang_id} tidak ada di master, order dilewati`, true);
+                continue;
+            }
+
+            const units = getUnitsForBarang(barang);
+            const satuan = it.satuan || units[0]?.satuan || barang.satuan;
+            const uObj = units.find((u) => u.satuan === satuan) ?? units[0];
+            const harga = uObj?.harga_jual ?? Number(barang.harga_jual ?? 0);
+
+            state.cart.push({
+                barang_id: barang.id,
+                nama_barang: barang.nama_barang,
+                key: cartKey(barang.id, it.jenis_pesanan),
+                satuan,
+                harga,
+                harga_asli: harga,
+                jumlah: Number(it.jumlah) || 0,
+                diskon: 0,
+                is_bonus: !!it.is_bonus,
+                promo_id: it.promo_id ?? null,
+                jenis_pesanan: it.jenis_pesanan || 'dine_in',
+                is_kemasan: state.barangKemasan.some((b) => Number(b.id) === Number(barang.id)),
+            });
+        }
+
+        state.diskonTransaksi = Number(order.diskon_persen) || 0;
+        state.biayaKirim = Number(order.biaya_kirim) || 0;
+        state.alamatPengiriman = order.alamat_pengiriman ?? '';
+        state.aplikatorId = order.aplikator_id ?? null;
+
+        const inputDiskon = document.getElementById('input-diskon');
+        if (inputDiskon) inputDiskon.value = state.diskonTransaksi > 0 ? String(state.diskonTransaksi) : '';
+        const inputAlamat = document.getElementById('input-alamat');
+        if (inputAlamat) inputAlamat.value = state.alamatPengiriman;
+
+        tutupModalOrderPending();
+        if (typeof bukaCart === 'function' && window.innerWidth < 1024) bukaCart();
+        updateCartTierPrices();
+        applyPromoBonusRules();
+        render();
+        toast(`Order ${order.kode_order} dimuat. Stok barang ini sudah ditahan untuk Anda.`);
+    } catch (e) {
+        toast(e.message ?? 'Gagal memuat order pending', true);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+/** Batalkan order pending → server melepas reservasi stoknya. */
+async function batalkanOrderPendingConfirm(id) {
+    const order = state.orderPending.find((o) => Number(o.id) === Number(id));
+    const ok = window.confirm(
+        `Batalkan order ${order?.kode_order ?? ''}? Stok yang ditahan akan dikembalikan.`
+    );
+    if (!ok) return;
+
+    const btn = document.querySelector(`[data-order-batal="${id}"]`);
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await batalkanOrderPending(id);
+        toast(res.message ?? 'Order pending dibatalkan.');
+        if (state.orderAktif && Number(state.orderAktif.id) === Number(id)) {
+            state.orderAktif = null;
+            state.cart = [];
+            render();
+        }
+        await muatUlangOrderPending();
+        await muatUlangData(true);
+    } catch (e) {
+        toast(e.message ?? 'Gagal membatalkan order pending', true);
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 
@@ -1111,7 +1449,7 @@ function tutupModalRiwayat() {
     document.getElementById('modal-riwayat')?.classList.add('hidden');
 }
 
-async function muatUlangData() {
+async function muatUlangData(silent = false) {
     try {
         const [barang, jenis, gudang] = await Promise.all([
             getBarang(),
@@ -1126,9 +1464,10 @@ async function muatUlangData() {
             if (gudangSetValue) gudangSetValue(state.gudangId);
         }
         render();
-        toast('Data produk & stok diperbarui');
+        // dipakai diam-diam setelah simpan/batal order pending, bukan oleh tombol refresh
+        if (!silent) toast('Data produk & stok diperbarui');
     } catch (err) {
-        toast(err.message ?? 'Gagal memuat ulang data', true);
+        if (!silent) toast(err.message ?? 'Gagal memuat ulang data', true);
     }
 }
 
@@ -1137,7 +1476,7 @@ async function refreshStokSilent() {
     const ae = document.activeElement;
     if (ae && ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName)) return;
     if (ae && (ae.hasAttribute?.('data-add') || ae.closest?.('[data-add]'))) return;
-    const modalTerbuka = ['modal-struk', 'modal-konfirmasi-reset', 'modal-konfirmasi-gudang', 'modal-konfirmasi-hapus', 'modal-konfirmasi-nontunai', 'modal-konfirmasi-diskon', 'modal-panduan-shortcut', 'modal-riwayat', 'modal-password-cetak'].some((id) => {
+    const modalTerbuka = ['modal-struk', 'modal-konfirmasi-reset', 'modal-konfirmasi-gudang', 'modal-konfirmasi-hapus', 'modal-konfirmasi-nontunai', 'modal-konfirmasi-diskon', 'modal-panduan-shortcut', 'modal-riwayat', 'modal-password-cetak', 'modal-order-pending'].some((id) => {
         const el = document.getElementById(id);
         return el && !el.classList.contains('hidden');
     });
@@ -1146,6 +1485,9 @@ async function refreshStokSilent() {
         const [barang] = await Promise.all([getBarang()]);
         state.barang = barang;
         renderProduk();
+        // badge jumlah order pending ikut disegarkan supaya kasir tahu
+        // ada order milik kasir lain yang sedang menunggu
+        muatUlangOrderPending();
     } catch (_) {
     }
 }
@@ -1634,7 +1976,65 @@ function buildProductCard(grp) {
         ? `<span class="text-[11px] font-bold text-sky-600 tabular-nums">${rupiah(hargaX)}</span>`
         : '');
 
-    const iconHtml = getProductIconHtml(barang);
+const iconHtml = getProductIconHtml(barang);
+    const units = getUnitsForBarang(barang);
+
+    // Dropdown satuan. handle ubahSatuanItem() sudah terpasang di delegasi klik
+    // (#cart-items) — dia hanya menunggu atribut ini muncul.
+    const satuanPicker = (key, satuanAktif) => {
+        if (!key || units.length < 2) return '';
+        const opsi = units.map((u) => `
+                        <button type="button" data-custom-unit-select="${escapeHtml(key)}" data-unit-val="${escapeHtml(u.satuan)}"
+                            class="w-full text-left text-[11px] font-semibold px-2 py-1.5 rounded-md cursor-pointer transition-colors ${u.satuan === satuanAktif ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-600 hover:bg-zinc-100'}">
+                            ${escapeHtml(u.satuan)}${u.faktor > 1 ? ` <span class="text-zinc-400 font-normal">= ${u.faktor} ${escapeHtml(barang?.satuan ?? 'Pcs')}</span>` : ''}
+                        </button>`).join('');
+        return `
+                    <div class="relative shrink-0">
+                        <button type="button" data-unit-dropdown-btn="${escapeHtml(key)}" data-unit-dropdown-chevron="${escapeHtml(key)}"
+                            class="inline-flex items-center gap-0.5 text-[10px] font-bold text-zinc-600 hover:text-zinc-900 border border-zinc-200 hover:border-zinc-300 rounded-md px-1.5 py-1 cursor-pointer transition-colors">
+                            ${escapeHtml(satuanAktif || units[0].satuan)}
+                            <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        </button>
+                        <div data-unit-dropdown-menu="${escapeHtml(key)}"
+                            class="hidden absolute right-0 bottom-full mb-1 z-20 w-40 max-h-48 overflow-y-auto bg-white border border-zinc-200 rounded-lg shadow-lg p-1 flex flex-col gap-0.5">
+                            ${opsi}
+                        </div>
+                    </div>`;
+    };
+
+    // Hapus per baris tipe (bukan per kartu) karena setiap tipe adalah baris
+    // state.cart sendiri dengan key sendiri.
+    const delBtn = (key) => (key
+        ? `<button type="button" data-del="${escapeHtml(key)}" title="Hapus baris ini"
+                        class="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-zinc-300 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                    </button>`
+        : '');
+
+    // Satu baris = satu baris state.cart, jadi baris ini juga target fokus
+    // keyboard (fokusCartRow, panah atas/bawah, Del, R).
+    const barisTipe = ({ tipe, label, icon, qty, hargaX, key, satuanAktif, idx }) => `
+            <div ${key ? `data-cart-row data-cart-idx="${idx}" tabindex="0"` : ''}
+                class="flex items-center justify-between gap-2 py-0.5 pl-1 rounded-md ${key ? 'focus:outline-none focus:ring-2 focus:ring-zinc-900/20' : ''}">
+                <div class="flex items-center gap-2.5 text-zinc-700 min-w-0">
+                    <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        ${icon}
+                    </svg>
+                    <span class="text-xs font-medium text-zinc-700">${label}</span>
+                    ${hargaTipe(qty, hargaX)}
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    ${satuanPicker(key, satuanAktif)}
+                    <button type="button" data-btn-minus-type="${barang_id}" data-type="${tipe}"
+                        class="w-7 h-7 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 font-bold flex items-center justify-center cursor-pointer transition-colors text-sm select-none"
+                        title="Kurangi ${label}">−</button>
+                    <span class="w-6 text-center text-xs font-bold text-zinc-900 tabular-nums select-none">${qty}</span>
+                    <button type="button" data-btn-plus-type="${barang_id}" data-type="${tipe}"
+                        class="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold flex items-center justify-center cursor-pointer transition-colors text-sm shadow-xs select-none"
+                        title="Tambah ${label}">+</button>
+                    ${delBtn(key)}
+                </div>
+            </div>`;
 
     // Nota tarif aplikator per item delivery (harga bisa berbeda dari harga normal)
     const aplikatorAktif = Number(state.aplikatorId) > 0
@@ -1667,65 +2067,9 @@ function buildProductCard(grp) {
 
         <!-- Sub-rows untuk Tipe Pesanan: Dine in, Take away, Delivery -->
         <div class="space-y-2.5 pt-1.5 border-t border-zinc-100">
-            <!-- Dine in -->
-            <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-2.5 text-zinc-700">
-                    <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
-                    </svg>
-                    <span class="text-xs font-medium text-zinc-700">Dine in</span>
-                    ${hargaTipe(qtyDineIn, hargaDineIn)}
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" data-btn-minus-type="${barang_id}" data-type="dine_in"
-                        class="w-7 h-7 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 font-bold flex items-center justify-center cursor-pointer transition-colors text-sm select-none"
-                        title="Kurangi Dine In">−</button>
-                    <span class="w-6 text-center text-xs font-bold text-zinc-900 tabular-nums select-none">${qtyDineIn}</span>
-                    <button type="button" data-btn-plus-type="${barang_id}" data-type="dine_in"
-                        class="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold flex items-center justify-center cursor-pointer transition-colors text-sm shadow-xs select-none"
-                        title="Tambah Dine In">+</button>
-                </div>
-            </div>
-
-            <!-- Take away -->
-            <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-2.5 text-zinc-700">
-                    <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
-                    </svg>
-                    <span class="text-xs font-medium text-zinc-700">Take away</span>
-                    ${hargaTipe(qtyTakeAway, hargaTakeAway)}
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" data-btn-minus-type="${barang_id}" data-type="take_away"
-                        class="w-7 h-7 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 font-bold flex items-center justify-center cursor-pointer transition-colors text-sm select-none"
-                        title="Kurangi Take Away">−</button>
-                    <span class="w-6 text-center text-xs font-bold text-zinc-900 tabular-nums select-none">${qtyTakeAway}</span>
-                    <button type="button" data-btn-plus-type="${barang_id}" data-type="take_away"
-                        class="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold flex items-center justify-center cursor-pointer transition-colors text-sm shadow-xs select-none"
-                        title="Tambah Take Away">+</button>
-                </div>
-            </div>
-
-            <!-- Delivery -->
-            <div class="flex items-center justify-between gap-2">
-                <div class="flex items-center gap-2.5 text-zinc-700">
-                    <svg class="w-4 h-4 text-zinc-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
-                    </svg>
-                    <span class="text-xs font-medium text-zinc-700">Delivery</span>
-                    ${hargaTipe(qtyDelivery, hargaDelivery)}
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" data-btn-minus-type="${barang_id}" data-type="delivery"
-                        class="w-7 h-7 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 font-bold flex items-center justify-center cursor-pointer transition-colors text-sm select-none"
-                        title="Kurangi Delivery">−</button>
-                    <span class="w-6 text-center text-xs font-bold text-zinc-900 tabular-nums select-none">${qtyDelivery}</span>
-                    <button type="button" data-btn-plus-type="${barang_id}" data-type="delivery"
-                        class="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-white font-extrabold flex items-center justify-center cursor-pointer transition-colors text-sm shadow-xs select-none"
-                        title="Tambah Delivery">+</button>
-                </div>
-            </div>
+            ${barisTipe({ tipe: 'dine_in', label: 'Dine in', icon: '<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>', qty: qtyDineIn, hargaX: hargaDineIn, key: grp.keyDineIn, satuanAktif: grp.satuanDineIn, idx: grp.idxDineIn })}
+            ${barisTipe({ tipe: 'take_away', label: 'Take away', icon: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>', qty: qtyTakeAway, hargaX: hargaTakeAway, key: grp.keyTakeAway, satuanAktif: grp.satuanTakeAway, idx: grp.idxTakeAway })}
+            ${barisTipe({ tipe: 'delivery', label: 'Delivery', icon: '<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a2 2 0 0 0 2-2v-3.65a2 2 0 0 0-.22-.624l-3.48-4.35A2 2 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>', qty: qtyDelivery, hargaX: hargaDelivery, key: grp.keyDelivery, satuanAktif: grp.satuanDelivery, idx: grp.idxDelivery })}
             ${deliveryNote}
         </div>
     </div>`;
@@ -1910,7 +2254,10 @@ function renderCart() {
     const rowDiskonNota = document.getElementById('row-diskon-nota');
     const lblDiskonNota = document.getElementById('lbl-diskon-nota');
     if (rowDiskonNota && lblDiskonNota) {
-        rowDiskonNota.classList.toggle('hidden', potonganNota <= 0);
+        // Input diskon harus selalu terjangkau begitu ada isi keranjang. Kalau
+        // disembunyikan saat nilainya 0, satu-satunya cara mengisinya (input itu
+        // sendiri) ikut tersembunyi -> input mati selamanya.
+        rowDiskonNota.classList.toggle('hidden', state.cart.length === 0);
         lblDiskonNota.textContent = potonganNota > 0 ? `- ${rupiah(potonganNota)}` : '-Rp 0';
     }
 
@@ -2192,31 +2539,41 @@ function render() {
     renderDeliveryInfoBox();
     renderCart();
     renderGudangStokInfo();
+    renderBannerOrderAktif();
+    renderBadgeOrderPendingHeader();
 }
 
 function fokusCartRow() {
     if (cartIdx < 0) return;
-    const rows = document.querySelectorAll('#cart-items [data-cart-row]');
-    if (rows[cartIdx]) {
-        rows[cartIdx].focus();
-        rows[cartIdx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    // Cocokkan lewat data-cart-idx, bukan indeks posisi. Kartu produk merender
+    // tipe dalam urutan tetap (dine_in, take_away, delivery) sedangkan state.cart
+    // bisa urut lain, jadi indeks posisional bisa meleset ke baris yang salah.
+    const row = document.querySelector(`#cart-items [data-cart-idx="${cartIdx}"]`);
+    if (row) {
+        row.focus();
+        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 }
 
+// Baris yang punya elemen di DOM. Harus sama persis dengan yang di-render
+// getCartProductGroups(), kalau tidak indeks keyboard bisa menunjuk baris
+// yang tidak ada di layar.
+const barisTervisible = (i) => !i.is_bonus && !i.is_kemasan;
+
 function indeksSeleksiPertama() {
-    return state.cart.findIndex((i) => !i.is_bonus);
+    return state.cart.findIndex(barisTervisible);
 }
 
 function indeksSeleksiTerakhir() {
     for (let i = state.cart.length - 1; i >= 0; i--) {
-        if (!state.cart[i].is_bonus) return i;
+        if (barisTervisible(state.cart[i])) return i;
     }
     return -1;
 }
 
 function pindahCartIdx(delta) {
     const selectable = state.cart
-        .map((i, idx) => (i.is_bonus ? -1 : idx))
+        .map((i, idx) => (barisTervisible(i) ? idx : -1))
         .filter((idx) => idx >= 0);
     if (selectable.length === 0) {
         cartIdx = -1;
@@ -2563,7 +2920,10 @@ async function init() {
         },
         {
             renderBadge: (g) => {
-                const jumlah = state.barang.filter((b) => (b.stok?.[g.value] ?? 0) > 0).length;
+                const jumlah = state.barang.filter((b) => {
+                    const tersedia = b.stok_tersedia?.[g.value] ?? b.stok?.[g.value] ?? 0;
+                    return Number(tersedia) > 0;
+                }).length;
                 return jumlah > 0 ? `${jumlah} barang` : 'stok 0';
             },
         }
@@ -2579,6 +2939,29 @@ async function init() {
     document.getElementById('btn-kemasan-pakai')?.addEventListener('click', () => toggleKemasan(true));
     document.getElementById('btn-kemasan-tanpa')?.addEventListener('click', () => toggleKemasan(false));
 
+    // Order Pending
+    document.getElementById('btn-daftar-order')?.addEventListener('click', bukaModalOrderPending);
+    document.getElementById('btn-order-pending')?.addEventListener('click', btnSimpanOrderPending);
+    document.getElementById('btn-tutup-order-pending')?.addEventListener('click', tutupModalOrderPending);
+    document.getElementById('btn-tutup-order-pending-bawah')?.addEventListener('click', tutupModalOrderPending);
+    document.getElementById('btn-lepas-order-aktif')?.addEventListener('click', lepasOrderAktif);
+
+    // Delegasi klik untuk baris order (Lanjut / Batal) karena dirender ulang tiap muat.
+    document.getElementById('order-pending-list')?.addEventListener('click', (e) => {
+        const btnLanjut = e.target.closest('[data-order-lanjut]');
+        if (btnLanjut) {
+            lanjutkanOrderPending(btnLanjut.dataset.orderLanjut);
+            return;
+        }
+        const btnBatal = e.target.closest('[data-order-batal]');
+        if (btnBatal) batalkanOrderPendingConfirm(btnBatal.dataset.orderBatal);
+    });
+
+    // Klik backdrop modal order pending
+    document.getElementById('modal-order-pending')?.addEventListener('click', (e) => {
+        if (e.target.id === 'modal-order-pending') tutupModalOrderPending();
+    });
+
     // Modal Konfirmasi Gudang
     document.getElementById('btn-batal-gudang')?.addEventListener('click', () => {
         document.getElementById('modal-konfirmasi-gudang')?.classList.add('hidden');
@@ -2592,6 +2975,7 @@ async function init() {
             state.gudangId = pendingGudangId;
             highlightedIdx = -1;
             resetTransaksi();
+            muatUlangOrderPending();
             const targetGudang = state.gudang.find((g) => g.id === pendingGudangId);
             toast(`Berhasil pindah ke ${targetGudang?.nama_gudang ?? 'gudang terpilih'}`);
             pendingGudangId = null;
@@ -2960,9 +3344,9 @@ async function init() {
                 }
                 return;
             }
-            if (cartIdx < 0 || cartIdx >= state.cart.length) return;
-            if (state.cart[cartIdx]?.is_bonus) return;
-            const idKey = state.cart[cartIdx].key;
+if (cartIdx < 0 || cartIdx >= state.cart.length) return;
+    if (!barisTervisible(state.cart[cartIdx] ?? {})) return;
+    const idKey = state.cart[cartIdx].key;
 
             if (e.key === 'ArrowUp') {
                 e.preventDefault();
@@ -3327,7 +3711,7 @@ async function init() {
                 document.querySelectorAll('[data-dd-chevron], [data-custom-dd-chevron]').forEach((c) => c.classList.remove('rotate-180'));
                 return;
             }
-            const urutanModal = ['modal-struk', 'modal-password-cetak', 'modal-konfirmasi-reset', 'modal-konfirmasi-gudang', 'modal-konfirmasi-hapus', 'modal-konfirmasi-nontunai', 'modal-konfirmasi-diskon', 'modal-riwayat'];
+            const urutanModal = ['modal-struk', 'modal-password-cetak', 'modal-konfirmasi-reset', 'modal-konfirmasi-gudang', 'modal-konfirmasi-hapus', 'modal-konfirmasi-nontunai', 'modal-konfirmasi-diskon', 'modal-riwayat', 'modal-order-pending'];
             const terbuka = urutanModal.find((id) => {
                 const el = document.getElementById(id);
                 return el && !el.classList.contains('hidden');
@@ -3356,6 +3740,10 @@ async function init() {
                 tutupModalHapus();
                 return;
             }
+            if (terbuka === 'modal-order-pending') {
+                tutupModalOrderPending();
+                return;
+            }
             if (terbuka) {
                 document.getElementById(terbuka)?.classList.add('hidden');
                 document.getElementById('input-search')?.focus();
@@ -3377,6 +3765,13 @@ async function init() {
             cartIdx = -1;
             render();
             document.getElementById('input-search')?.focus();
+            return;
+        }
+
+        if (mod && e.key.toLowerCase() === 'o' && !e.altKey) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            bukaModalOrderPending();
             return;
         }
 
@@ -3575,6 +3970,10 @@ async function init() {
     }
 
     setInterval(refreshStokSilent, AUTO_REFRESH_MS);
+
+    // Order pending dimuat terpisah supaya kegagalan di sini tidak memblokir
+    // layar kasir. Badge diheader tetap menampilkan jumlahnya.
+    muatUlangOrderPending();
 }
 
 init().catch((e) => {

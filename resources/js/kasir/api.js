@@ -238,3 +238,133 @@ export function buatNomerNota(urutan = 1) {
     ].join('');
     return `PJ-${ymd}-${String(urutan).padStart(4, '0')}`;
 }
+
+// =====================================================================
+// ORDER PENDING
+// ---------------------------------------------------------------------
+// Order pending = keranjang yang ditahan, belum dibayar. Stok fisiknya
+// tidak berkurang; server yang ngitung "stok tersedia" = stok - reservasi.
+// =====================================================================
+
+const ORDER_PENDING_URL = '/kasir/order-pending';
+
+// Data order pending buat mode mock (hanya di Salim, bukan disimpan permanen).
+const mockOrderPending = [];
+let mockOrderPendingCounter = 1;
+
+function csrfHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ?? '',
+    };
+}
+
+async function postJson(url, body) {
+    const res = await fetch(url, { method: 'POST', headers: csrfHeaders(), body: JSON.stringify(body) });
+
+    if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.message ?? `Gagal menyimpan (${res.status})`);
+    }
+    return res.json();
+}
+
+/**
+ * Simpan keranjang jadi order pending → POST /kasir/order-pending.
+ *
+ * Server yang cek & mengunci stok, jadi browser tidak boleh menentukan
+ * sendiri apakah stok cukup atau tidak.
+ */
+export async function simpanOrderPending(payload) {
+    if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 400));
+        const ymd = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+        const order = {
+            id: mockOrderPendingCounter,
+            kode_order: `ORD-${ymd}-${String(mockOrderPendingCounter).padStart(4, '0')}`,
+            gudang_id: payload.gudang_id,
+            status: 'pending',
+            diskon_persen: payload.diskon_persen ?? 0,
+            total: payload.total ?? 0,
+            neto: payload.neto ?? 0,
+            biaya_kirim: payload.biaya_kirim ?? 0,
+            alamat_pengiriman: payload.alamat_pengiriman ?? null,
+            aplikator_id: payload.aplikator_id ?? null,
+            items: (payload.details ?? []).map((d) => ({
+                barang_id: d.barang_id,
+                satuan: d.satuan,
+                jumlah: d.jumlah,
+                is_bonus: !!d.is_bonus,
+                promo_id: d.promo_id ?? null,
+                jenis_pesanan: d.jenis_pesanan ?? 'dine_in',
+            })),
+        };
+        mockOrderPendingCounter += 1;
+        mockOrderPending.unshift(order);
+        return order;
+    }
+
+    return postJson(ORDER_PENDING_URL, payload);
+}
+
+/**
+ * Daftar order pending yang masih aktif → GET /kasir/order-pending.
+ */
+export async function getOrderPending(gudangId) {
+    if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 200));
+        return { items: mockOrderPending.filter((o) => !gudangId || o.gudang_id === gudangId) };
+    }
+
+    const params = new URLSearchParams();
+    if (gudangId != null) params.set('gudang_id', gudangId);
+
+    const res = await fetch(`${ORDER_PENDING_URL}${params.toString() ? `?${params}` : ''}`, {
+        headers: { Accept: 'application/json' },
+    });
+
+    if (!res.ok) {
+        throw new Error(`Gagal memuat order pending (${res.status})`);
+    }
+    return res.json();
+}
+
+/**
+ * Detail satu order pending untuk dimuat ulang ke keranjang.
+ * `harga` sengaja tidak dipakai dari sini — harga dihitung ulang dari master barang.
+ */
+export async function getOrderPendingDetail(id) {
+    if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 200));
+        const order = mockOrderPending.find((o) => o.id === id);
+        if (!order) throw new Error('Order pending tidak ditemukan.');
+        return order;
+    }
+
+    const res = await fetch(`${ORDER_PENDING_URL}/${id}`, {
+        headers: { Accept: 'application/json' },
+    });
+
+    if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.message ?? `Gagal memuat order pending (${res.status})`);
+    }
+    return res.json();
+}
+
+/**
+ * Batalkan order pending → POST /kasir/order-pending/{id}/batal.
+ * Server yang melepas reservasi stoknya.
+ */
+export async function batalkanOrderPending(id) {
+    if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 200));
+        const idx = mockOrderPending.findIndex((o) => o.id === id);
+        if (idx === -1) throw new Error('Order pending tidak ditemukan.');
+        mockOrderPending.splice(idx, 1);
+        return { success: true };
+    }
+
+    return postJson(`${ORDER_PENDING_URL}/${id}/batal`, {});
+}
