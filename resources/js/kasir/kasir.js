@@ -712,10 +712,11 @@ async function simpanTransaksi(payload) {
 let orderPendingAktif = false;
 
 function setOrderBadge(jumlah) {
-    const badge = document.getElementById('badge-order-pending');
-    if (!badge) return;
-    badge.textContent = jumlah > 99 ? '99+' : String(jumlah);
-    badge.classList.toggle('hidden', jumlah < 1);
+    const badges = document.querySelectorAll('[data-badge-order-pending]');
+    badges.forEach((badge) => {
+        badge.textContent = jumlah > 99 ? '99+' : String(jumlah);
+        badge.classList.toggle('hidden', jumlah < 1);
+    });
 }
 
 /** Muat ulang daftar order pending + segarkan angka reservasi di state.barang. */
@@ -814,8 +815,100 @@ function renderBannerOrderAktif() {
     if (ada) kode.textContent = state.orderAktif.kode_order ?? '';
 }
 
+/** Ringkasan jumlah order ditahan + total nilainya, di baris bawah header modal. */
+function renderRingkasanOrderPending() {
+    const baris = document.getElementById('order-pending-ringkasan');
+    if (!baris) return;
+    const jumlah = state.orderPending.length;
+    baris.classList.toggle('hidden', jumlah < 1);
+    if (jumlah < 1) return;
+
+    const totalNeto = state.orderPending.reduce((n, o) => n + Number(o.neto || 0), 0);
+    const elJumlah = document.getElementById('order-pending-ringkasan-jumlah');
+    const elTotal = document.getElementById('order-pending-ringkasan-total');
+    if (elJumlah) elJumlah.textContent = `${jumlah} order ditahan`;
+    if (elTotal) elTotal.textContent = rupiah(totalNeto);
+}
+
 function renderBadgeOrderPendingHeader() {
     setOrderBadge(state.orderPending.length);
+    renderRingkasanOrderPending();
+}
+
+const TIPE_PESANAN_CHIP = {
+    delivery: 'DELIVERY',
+    take_away: 'TAKE AWAY',
+    dine_in: 'DINE IN',
+};
+
+const CHIP_TIPE_CLASS = {
+    delivery: 'bg-orange-100 text-orange-700',
+    take_away: 'bg-zinc-100 text-zinc-700',
+    dine_in: 'bg-emerald-100 text-emerald-700',
+};
+
+function templateOrderPendingRow(o) {
+    const items = o.items ?? [];
+    const jam = o.created_at ? formatJamWib(o.created_at) : '-';
+    const mending = formatMendingWib(o.created_at);
+
+    const tipeSet = new Set(items.map((i) => i.jenis_pesanan).filter(Boolean));
+    const chips = [...tipeSet]
+        .filter((t) => TIPE_PESANAN_CHIP[t])
+        .map(
+            (t) =>
+                `<span class="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-md ${CHIP_TIPE_CLASS[t]}">${TIPE_PESANAN_CHIP[t]}</span>`
+        )
+        .join('');
+
+    // Pill nama barang: tampil 4 sisanya cukup supaya panel tidak terlalu tinggi.
+    const MAKS_PILL = 4;
+    const pill = items.slice(0, MAKS_PILL).map(
+        (i) =>
+            `<span class="text-[11px] font-semibold text-zinc-600 bg-zinc-50 border border-zinc-200 rounded-md px-2 py-0.5">
+                ${escapeHtml(i.nama_barang)} &times;${Number(i.jumlah) || 0}
+            </span>`
+    );
+    const sisa = items.length - MAKS_PILL;
+    if (sisa > 0) {
+        pill.push(
+            `<span class="text-[11px] font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-md px-2 py-0.5">+${sisa} lagi</span>`
+        );
+    }
+
+    return `
+        <div class="rounded-xl border border-zinc-200 bg-white px-4 py-3.5 hover:border-zinc-300 transition-colors" data-order-row="${o.id}">
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-black text-zinc-900 tabular-nums truncate">${escapeHtml(o.kode_order)}</span>
+                <span class="shrink-0 text-[10px] font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-md px-1.5 py-0.5">
+                    ${escapeHtml(o.nama_gudang ?? '-')}
+                </span>
+                <span class="ml-auto shrink-0 text-[10px] font-semibold text-zinc-400 tabular-nums" title="${escapeHtml(jam)}">${escapeHtml(mending)}</span>
+            </div>
+
+            <div class="mt-2 flex items-center gap-1.5 flex-wrap">
+                ${chips ? `<span class="flex items-center gap-1.5">${chips}</span>` : ''}
+                <span class="text-[11px] font-semibold text-zinc-500 truncate">${escapeHtml(o.nama_kasir ?? '-')}</span>
+            </div>
+
+            <div class="mt-2 flex flex-wrap gap-1">
+                ${pill.length ? pill.join('') : '<span class="text-[11px] text-zinc-400">Rincian barang tidak tersedia</span>'}
+            </div>
+
+            <div class="mt-3 pt-2.5 border-t border-zinc-100 flex items-center justify-between gap-3">
+                <span class="text-base font-black text-zinc-900 tabular-nums">${rupiah(o.neto)}</span>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button type="button" data-order-batal="${o.id}"
+                        class="px-3 py-2 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-600 hover:text-white hover:border-red-600 transition-colors cursor-pointer">
+                        Batal
+                    </button>
+                    <button type="button" data-order-lanjut="${o.id}"
+                        class="px-4 py-2 text-xs font-bold text-white bg-zinc-900 border border-transparent rounded-lg hover:bg-white hover:text-zinc-900 hover:border-zinc-900 active:scale-[0.97] transition select-none cursor-pointer">
+                        Lanjut
+                    </button>
+                </div>
+            </div>
+        </div>`;
 }
 
 function renderOrderPendingList() {
@@ -835,38 +928,7 @@ function renderOrderPendingList() {
 
     kosong?.classList.add('hidden');
     wrap.classList.remove('hidden');
-    wrap.innerHTML = state.orderPending.map((o) => {
-        const itemNames = (o.items ?? []).map((i) => `${i.nama_barang} ×${i.jumlah}`).join(', ');
-        const jam = o.created_at ? formatJamWib(o.created_at) : '-';
-        return `
-            <div class="px-4 py-3.5 flex items-start gap-3" data-order-row="${o.id}">
-                <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-sm font-black text-zinc-900 tabular-nums">${escapeHtml(o.kode_order)}</span>
-                        <span class="text-[10px] font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 rounded-md px-1.5 py-0.5">
-                            ${escapeHtml(o.nama_gudang ?? '-')}
-                        </span>
-                    </div>
-                    <p class="text-xs text-zinc-500 mt-1 leading-snug line-clamp-2">${escapeHtml(itemNames || '-')}</p>
-                    <p class="text-[11px] text-zinc-400 mt-1 tabular-nums">
-                        ${escapeHtml(o.nama_kasir ?? '-')} · ${escapeHtml(jam)}
-                    </p>
-                </div>
-                <div class="text-right shrink-0 flex flex-col items-end gap-2">
-                    <span class="text-sm font-black text-zinc-900 tabular-nums">${rupiah(o.neto)}</span>
-                    <div class="flex items-center gap-1.5">
-                        <button type="button" data-order-batal="${o.id}"
-                            class="text-[10px] font-bold text-red-600 hover:bg-red-50 border border-red-200 rounded-md px-2 py-1 transition-colors cursor-pointer">
-                            Batal
-                        </button>
-                        <button type="button" data-order-lanjut="${o.id}"
-                            class="text-[10px] font-bold text-white bg-zinc-900 hover:bg-zinc-800 rounded-md px-2.5 py-1 transition-colors cursor-pointer">
-                            Lanjut
-                        </button>
-                    </div>
-                </div>
-            </div>`;
-    }).join('');
+    wrap.innerHTML = state.orderPending.map((o) => templateOrderPendingRow(o)).join('');
 
     renderBadgeOrderPendingHeader();
 }
@@ -1253,6 +1315,21 @@ function formatJamWib(value) {
         minute: '2-digit',
         hour12: false,
     }).format(d);
+}
+
+/** Waktu relatif ringkas buat order pending: "baru saja", "12 mnt", "3 jam", "2 hr". */
+function formatMendingWib(value) {
+    if (!value) return '';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+
+    const menit = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (menit < 1) return 'baru saja';
+    if (menit < 60) return `${menit} mnt`;
+
+    const jam = Math.floor(menit / 60);
+    if (jam < 24) return `${jam} jam`;
+    return `${Math.floor(jam / 24)} hr`;
 }
 
 function updateJamHeader() {
@@ -2941,6 +3018,7 @@ async function init() {
 
     // Order Pending
     document.getElementById('btn-daftar-order')?.addEventListener('click', bukaModalOrderPending);
+    document.getElementById('btn-daftar-order-mobile')?.addEventListener('click', bukaModalOrderPending);
     document.getElementById('btn-order-pending')?.addEventListener('click', btnSimpanOrderPending);
     document.getElementById('btn-tutup-order-pending')?.addEventListener('click', tutupModalOrderPending);
     document.getElementById('btn-tutup-order-pending-bawah')?.addEventListener('click', tutupModalOrderPending);

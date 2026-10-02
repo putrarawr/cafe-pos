@@ -72,6 +72,7 @@
             <div class="w-full px-2 space-y-2">
                 <div class="h-12 rounded-xl bg-zinc-200/50 animate-pulse"></div>
                 <div class="h-12 rounded-xl bg-zinc-200/50 animate-pulse"></div>
+                <div class="h-12 rounded-xl bg-zinc-200/50 animate-pulse"></div>
             </div>
         </div>
         <div class="flex-1 flex overflow-hidden">
@@ -162,6 +163,20 @@
                     </svg>
                     <span class="text-xs font-semibold leading-none">Riwayat</span>
                 </button>
+
+                <button id="btn-daftar-order" type="button" title="Lihat daftar Order Pending yang sedang ditahan" aria-label="Lihat daftar Order Pending yang sedang ditahan"
+                    class="relative w-full flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                    <span class="relative shrink-0">
+                        <svg class="w-6 h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2H6a2 2 0 0 1 -2 -2V6a2 2 0 0 1 2 -2h2"/>
+                            <rect x="8" y="2" width="8" height="4" rx="1"/>
+                            <path d="M9 12h6M9 16h4"/>
+                        </svg>
+                        <span data-badge-order-pending
+                            class="hidden absolute -top-1.5 -right-2 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums border-2 border-white"></span>
+                    </span>
+                    <span class="text-xs font-semibold leading-none">Order</span>
+                </button>
             </div>
 
             <div class="flex-1"></div>
@@ -207,6 +222,16 @@
                                     <path d="M3 3v5h5"/>
                                     <path d="M12 7v5l3 3"/>
                                 </svg>
+                            </button>
+                            <button id="btn-daftar-order-mobile" type="button" title="Daftar Order Pending" aria-label="Daftar Order Pending"
+                                class="relative w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50 transition-all duration-200 cursor-pointer">
+                                <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2H6a2 2 0 0 1 -2 -2V6a2 2 0 0 1 2 -2h2"/>
+                                    <rect x="8" y="2" width="8" height="4" rx="1"/>
+                                    <path d="M9 12h6M9 16h4"/>
+                                </svg>
+                                <span data-badge-order-pending
+                                    class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums border-2 border-white"></span>
                             </button>
                             <form method="POST" action="{{ route('kasir.logout') }}">
                                 @csrf
@@ -273,12 +298,6 @@
                             class="hidden min-w-5 h-5 px-1.5 rounded-full bg-zinc-900 text-white text-[11px] font-bold flex items-center justify-center tabular-nums shrink-0"></span>
                     </div>
                     <div class="flex items-center gap-1.5 shrink-0">
-                        <button id="btn-daftar-order" type="button" title="Lihat daftar Order Pending yang sedang ditahan"
-                            class="relative inline-flex items-center gap-1.5 text-xs font-bold text-zinc-700 hover:text-zinc-900 border border-zinc-200 hover:border-zinc-300 rounded-lg px-2.5 py-1.5 transition-colors cursor-pointer">
-                            <span>Daftar Order</span>
-                            <span id="badge-order-pending"
-                                class="hidden min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums"></span>
-                        </button>
                         <button id="btn-reset" type="button" title="Kosongkan keranjang" aria-label="Kosongkan keranjang"
                             class="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer">
                             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -757,21 +776,31 @@
 
     {{-- MODAL ORDER PENDING: pesanan ditahan, stok sudah dikunci --}}
     <div id="modal-order-pending" class="hidden anim-backdrop fixed inset-0 bg-zinc-950/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="anim-scale-in bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
-                <div>
+        <div class="anim-scale-in bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]">
+            <div class="shrink-0 flex items-center justify-between gap-3 px-6 py-4 border-b border-zinc-100">
+                <div class="min-w-0">
                     <h3 class="text-sm font-bold tracking-tight">Order Pending</h3>
-                    <p class="text-[11px] text-zinc-500 mt-0.5">Pesanan ditahan &mdash; stok sudah dikunci, belum dipotong</p>
+                    <p class="text-[11px] text-zinc-500 mt-0.5">Pesanan ditahan, stok sudah dikunci dan belum dipotong</p>
                 </div>
                 <button id="btn-tutup-order-pending" type="button"
-                    class="w-8 h-8 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                    class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
                         <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
                 </button>
             </div>
 
-            <div id="order-pending-memuat" class="px-6 py-10 text-center text-xs text-zinc-400">Memuat order pending...</div>
+            <div id="order-pending-ringkasan"
+                class="hidden shrink-0 flex items-center justify-between gap-3 px-6 py-2.5 border-b border-zinc-100 bg-zinc-50/60 text-xs">
+                <span id="order-pending-ringkasan-jumlah" class="font-bold text-zinc-600"></span>
+                <span id="order-pending-ringkasan-total" class="font-black text-zinc-900 tabular-nums"></span>
+            </div>
+
+            <div id="order-pending-memuat" class="shrink-0 px-3 py-3 space-y-2.5">
+                <div class="h-[104px] rounded-xl bg-zinc-100 animate-pulse"></div>
+                <div class="h-[104px] rounded-xl bg-zinc-100 animate-pulse"></div>
+                <div class="h-[104px] rounded-xl bg-zinc-100 animate-pulse"></div>
+            </div>
 
             <div id="order-pending-kosong" class="hidden px-6 py-12 text-center">
                 <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center">
@@ -783,7 +812,7 @@
                 <p class="text-xs text-zinc-400 mt-0.5">Tekan <span class="font-bold">Order</span> di area pembayaran untuk menahan pesanan saat ini</p>
             </div>
 
-            <div id="order-pending-list" class="hidden flex-1 overflow-y-auto divide-y divide-zinc-100"></div>
+            <div id="order-pending-list" class="hidden flex-1 overflow-y-auto px-3 py-3 space-y-2.5"></div>
 
             <div class="px-6 py-4 border-t border-zinc-100">
                 <button id="btn-tutup-order-pending-bawah" type="button"
