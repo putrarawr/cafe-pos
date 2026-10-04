@@ -26,7 +26,7 @@ class BarangsTable
                     ->label('Foto')
                     ->disk('public')
                     ->circular()
-                    ->size(36)
+                    ->imageSize(36)
                     ->toggleable(),
                 TextColumn::make('jenisBarang.nama_jenis')
                     ->label('Jenis Barang')

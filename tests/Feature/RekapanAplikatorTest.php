@@ -10,6 +10,7 @@ use App\Models\Gudang;
 use App\Models\JenisBarang;
 use App\Models\Penjualan;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -241,7 +242,7 @@ class RekapanAplikatorTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(RekapanAplikator::class)
-            ->callTableAction('detail', $gofood);
+            ->callAction(TestAction::make('detail')->table($gofood));
     }
 
     public function test_rekapan_aplikator_modal_menampilkan_komisi_rata_rata()

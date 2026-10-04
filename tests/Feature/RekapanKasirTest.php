@@ -10,6 +10,7 @@ use App\Models\JenisBarang;
 use App\Models\Karyawan;
 use App\Models\Penjualan;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -192,6 +193,6 @@ class RekapanKasirTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(RekapanKasir::class)
-            ->callTableAction('detail', $penjualan);
+            ->callAction(TestAction::make('detail')->table($penjualan));
     }
 }

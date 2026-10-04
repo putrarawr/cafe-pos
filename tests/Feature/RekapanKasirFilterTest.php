@@ -10,6 +10,7 @@ use App\Models\JenisBarang;
 use App\Models\Karyawan;
 use App\Models\Penjualan;
 use App\Models\User;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -221,7 +222,7 @@ class RekapanKasirFilterTest extends TestCase
         Livewire::actingAs($user)
             ->test(RekapanKasir::class)
             ->set('data.kategori_pembayaran', 'tunai')
-            ->callTableAction('detail', $pTunai);
+            ->callAction(TestAction::make('detail')->table($pTunai));
 
         // Uji rendering view modal dengan activeKategori 'tunai'
         $renderedView = view('filament.pages.modal-detail-rekapan-kasir', [
