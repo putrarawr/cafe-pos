@@ -118,22 +118,19 @@ class StokMinimumDinamisTest extends TestCase
 
         $lowStockQueryCount = Barang::query()
             ->where('tipe_barang', '!=', 'barang_jadi')
-            ->where(function ($query) {
-                $query->where(function ($q) {
-                    $q->where('barang.stok_minimum', '>', 0)
-                        ->whereRaw('(SELECT COALESCE(SUM(stok), 0) FROM barang_gudang WHERE barang_gudang.barang_id = barang.id) <= barang.stok_minimum');
-                })->orWhereHas('gudangs', function ($q) {
-                    $q->where('barang_gudang.stok_minimum', '>', 0)
-                        ->whereColumn('barang_gudang.stok', '<=', 'barang_gudang.stok_minimum');
-                });
-            })
+            ->where('barang.stok_minimum', '>', 0)
+            ->whereRaw('(SELECT COALESCE(SUM(stok), 0) FROM barang_gudang WHERE barang_gudang.barang_id = barang.id) <= barang.stok_minimum')
             ->count();
 
-        $this->assertSame(2, $lowStockQueryCount);
+        // Di dasbor (Alarm Belanja Supplier), hanya barang dengan total toko <= global min yang dihitung
+        // barangMenipisGudang totalnya 24 > 5 (aman di level toko, dipantau di Kontrol Stok Gudang)
+        // barangMenipisGlobal totalnya 8 <= 20 (menipis di level toko, perlu order supplier)
+        $this->assertSame(1, $lowStockQueryCount);
 
         Livewire::test(StatsOverviewWidget::class)
             ->assertSuccessful()
-            ->assertSee('Stok Menipis');
+            ->assertSee('Stok Menipis')
+            ->assertSee('1&nbsp;item', false);
     }
 
     public function test_kasir_controller_memuat_stok_minimum_dan_mapping_gudang(): void
