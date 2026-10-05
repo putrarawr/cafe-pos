@@ -28,14 +28,6 @@ class EditBarang extends EditRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $record = $this->getRecord();
-        $baseGlobal = (int) ($record->stok_minimum ?? 20);
-        $isGlobalActive = ($baseGlobal > 0);
-        $globalDeconstructed = BarangForm::deconstructBaseQtyToBestUnit($isGlobalActive ? $baseGlobal : 20, $record);
-
-        $data['pantau_stok_global'] = $isGlobalActive;
-        $data['stok_minimum_display'] = $globalDeconstructed['qty'];
-        $data['satuan_stok_minimum'] = $globalDeconstructed['satuan'];
-
         $gudangs = \App\Models\Gudang::all();
         $pivots = DB::table('barang_gudang')
             ->where('barang_id', $record->id)
@@ -45,15 +37,27 @@ class EditBarang extends EditRecord
         $statusGudang = [];
         $stokGudangDisplay = [];
         $satuanGudang = [];
+        $sumGudangBase = 0;
+
         foreach ($gudangs as $g) {
-            $baseGudang = isset($pivots[$g->id]) ? (int) $pivots[$g->id] : $baseGlobal;
+            $baseGudang = isset($pivots[$g->id]) ? (int) $pivots[$g->id] : 0;
             $isGudangActive = ($baseGudang > 0);
-            $deconstructed = BarangForm::deconstructBaseQtyToBestUnit($isGudangActive ? $baseGudang : ($isGlobalActive ? $baseGlobal : 20), $record);
+            $deconstructed = BarangForm::deconstructBaseQtyToBestUnit($isGudangActive ? $baseGudang : 20, $record);
             $statusGudang[$g->id] = $isGudangActive;
             $stokGudangDisplay[$g->id] = $deconstructed['qty'];
             $satuanGudang[$g->id] = $deconstructed['satuan'];
+
+            if ($isGudangActive) {
+                $sumGudangBase += $baseGudang;
+            }
         }
 
+        $baseGlobal = (int) ($record->stok_minimum ?? 0);
+        $isGlobalActive = ($baseGlobal > 0);
+
+        $data['pantau_stok_global'] = $isGlobalActive;
+        $data['stok_minimum_display'] = $isGlobalActive ? $sumGudangBase : 0;
+        $data['satuan_stok_minimum'] = $record->satuan ?? 'Pcs';
         $data['status_pantau_gudang'] = $statusGudang;
         $data['stok_minimum_gudang_display'] = $stokGudangDisplay;
         $data['satuan_stok_minimum_gudang'] = $satuanGudang;
@@ -76,10 +80,24 @@ class EditBarang extends EditRecord
             if (! $isGlobalActive) {
                 $data['stok_minimum'] = 0;
             } else {
-                $qty = (int) ($raw['stok_minimum_display'] ?? $data['stok_minimum_display'] ?? $record->stok_minimum ?? 20);
-                $unit = $raw['satuan_stok_minimum'] ?? ($data['satuan_stok_minimum'] ?? ($data['satuan'] ?? ($record->satuan ?? 'Pcs')));
-                $faktor = $record->getFaktorKonversi($unit);
-                $data['stok_minimum'] = $qty * $faktor;
+                $gudangs = \App\Models\Gudang::all();
+                $statusGudangs = $raw['status_pantau_gudang'] ?? ($data['status_pantau_gudang'] ?? []);
+                $gudangDisplays = $raw['stok_minimum_gudang_display'] ?? ($data['stok_minimum_gudang_display'] ?? []);
+                $satuanGudangs = $raw['satuan_stok_minimum_gudang'] ?? ($data['satuan_stok_minimum_gudang'] ?? []);
+
+                $total = 0;
+                foreach ($gudangs as $g) {
+                    $isActive = array_key_exists($g->id, $statusGudangs)
+                        ? (bool) $statusGudangs[$g->id]
+                        : true;
+                    if ($isActive) {
+                        $qtyVal = (int) ($gudangDisplays[$g->id] ?? 20);
+                        $unit = $satuanGudangs[$g->id] ?? ($record->satuan ?? 'Pcs');
+                        $faktor = $record->getFaktorKonversi($unit);
+                        $total += ($qtyVal * $faktor);
+                    }
+                }
+                $data['stok_minimum'] = $total;
             }
         }
 

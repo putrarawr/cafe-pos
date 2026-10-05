@@ -7,6 +7,7 @@ use App\Models\Barang;
 use App\Models\Gudang;
 use App\Models\JenisBarang;
 use App\Services\HargaAplikatorService;
+use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -108,66 +109,122 @@ class BarangForm
         ];
     }
 
+    public static function hitungTotalStokMinimumGlobal(Get|callable $get, ?Barang $record = null): int
+    {
+        $getVal = fn (string $key) => $get instanceof Get ? $get($key) : (is_callable($get) ? $get($key) : null);
+
+        $gudangs = Gudang::all();
+        $total = 0;
+
+        foreach ($gudangs as $g) {
+            $isActive = $getVal("status_pantau_gudang.{$g->id}");
+            if ($isActive === null) {
+                $isActive = true;
+            }
+
+            if ((bool) $isActive) {
+                $qty = (int) ($getVal("stok_minimum_gudang_display.{$g->id}") ?? 0);
+                $unit = $getVal("satuan_stok_minimum_gudang.{$g->id}") ?: ($getVal('satuan') ?: ($record?->satuan ?? 'Pcs'));
+                $faktor = static::getFaktorForUnit($unit, $get, $record);
+                $total += ($qty * $faktor);
+            }
+        }
+
+        return $total;
+    }
+
+    public static function syncGlobalStokMinimum(Set $set, Get|callable $get, ?Barang $record = null): void
+    {
+        $isGlobalActive = (bool) ($get instanceof Get ? ($get('pantau_stok_global') ?? true) : (($get)('pantau_stok_global') ?? true));
+        if (! $isGlobalActive) {
+            $set('stok_minimum_display', 0);
+            $set('stok_minimum', 0);
+            return;
+        }
+
+        $total = static::hitungTotalStokMinimumGlobal($get, $record);
+        $set('stok_minimum_display', $total);
+        $set('stok_minimum', $total);
+    }
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
             ->columns(1)
             ->components([
-                Section::make('Informasi Dasar Barang')
-                    ->description('Data utama barang dan harga eceran dasar (Level 1)')
-                    ->columnSpanFull()
-                    ->schema([
-                        Grid::make(2)->schema([
-                            Select::make('jenis_barang_id')
-                                ->label('Jenis Barang')
-                                ->relationship('jenisBarang', 'nama_jenis')
-                                ->required()
-                                ->searchable()
-                                ->preload(),
-                            TextInput::make('nama_barang')
-                                ->label('Nama Barang')
-                                ->required()
-                                ->maxLength(255),
-                            TextInput::make('nomer_seri')
-                                ->label('Nomor Seri')
-                                ->placeholder('Otomatis digenerate saat simpan (misal: ROK-0001)')
-                                ->disabled()
-                                ->dehydrated(false)
-                                ->visible(fn ($record) => filled($record?->nomer_seri)),
-                            TextInput::make('barcode')
-                                ->label('Barcode Produk (Opsional)')
-                                ->placeholder('Kosongkan untuk otomatis menggunakan Nomor Seri')
-                                ->helperText('Jika barang tidak punya barcode pabrik, otomatis disamakan dengan Nomor Seri.')
-                                ->maxLength(255),
-                            TextInput::make('satuan')
-                                ->label('Satuan Terkecil / Dasar (Level 1)')
-                                ->placeholder('Misal: Pcs, Batang, Botol, Saset')
-                                ->default('Pcs')
-                                ->required(),
-                            TextInput::make('harga_beli')
-                                ->label('Harga Beli Terakhir (Level 1)')
-                                ->numeric()
-                                ->required()
-                                ->prefix('Rp')
-                                ->default(0),
-                            TextInput::make('hpp')
-                                ->label('HPP Average (Rata-Rata Tertimbang)')
-                                ->numeric()
-                                ->prefix('Rp')
-                                ->readOnly()
-                                ->helperText('Otomatis dihitung ulang secara akurat saat ada transaksi Pembelian baru.')
-                                ->default(0),
-                            TextInput::make('harga_jual')
-                                ->label('Harga Jual Eceran (Level 1)')
-                                ->numeric()
-                                ->required()
-                                ->prefix('Rp')
-                                ->default(0)
-                                ->live(onBlur: true),
-                        ]),
-                    ]),
+                static::getInformasiDasarSection(),
+                static::getPengaturanCafeSection(),
+                static::getHargaDeliverySection(),
+                static::getHargaBertingkatSection(),
+                static::getTingkatanSatuanSection(),
+                static::getStokMinimumSection(),
+            ]);
+    }
 
-                Section::make('Pengaturan Cafe & POS')
+    public static function getInformasiDasarSection(): Section
+    {
+        return Section::make('Informasi Dasar Barang')
+            ->description('Data utama barang dan harga eceran dasar (Level 1)')
+            ->columnSpanFull()
+            ->schema([
+                Grid::make(2)->schema([
+                    Select::make('jenis_barang_id')
+                        ->label('Jenis Barang')
+                        ->relationship('jenisBarang', 'nama_jenis')
+                        ->required()
+                        ->searchable()
+                        ->preload(),
+                    TextInput::make('nama_barang')
+                        ->label('Nama Barang')
+                        ->required()
+                        ->maxLength(255),
+                    TextInput::make('nomer_seri')
+                        ->label('Nomor Seri')
+                        ->placeholder('Otomatis digenerate saat simpan (misal: ROK-0001)')
+                        ->disabled()
+                        ->dehydrated(false)
+                        ->visible(fn ($record) => filled($record?->nomer_seri)),
+                    TextInput::make('barcode')
+                        ->label('Barcode Produk (Opsional)')
+                        ->placeholder('Kosongkan untuk otomatis menggunakan Nomor Seri')
+                        ->helperText('Jika barang tidak punya barcode pabrik, otomatis disamakan dengan Nomor Seri.')
+                        ->maxLength(255),
+                    TextInput::make('satuan')
+                        ->label('Satuan Terkecil / Dasar (Level 1)')
+                        ->placeholder('Misal: Pcs, Batang, Botol, Saset')
+                        ->default('Pcs')
+                        ->required()
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
+                            BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                        }),
+                    TextInput::make('harga_beli')
+                        ->label('Harga Beli Terakhir (Level 1)')
+                        ->numeric()
+                        ->required()
+                        ->prefix('Rp')
+                        ->default(0),
+                    TextInput::make('hpp')
+                        ->label('HPP Average (Rata-Rata Tertimbang)')
+                        ->numeric()
+                        ->prefix('Rp')
+                        ->readOnly()
+                        ->helperText('Otomatis dihitung ulang secara akurat saat ada transaksi Pembelian baru.')
+                        ->default(0),
+                    TextInput::make('harga_jual')
+                        ->label('Harga Jual Eceran (Level 1)')
+                        ->numeric()
+                        ->required()
+                        ->prefix('Rp')
+                        ->default(0)
+                        ->live(onBlur: true),
+                ]),
+            ]);
+    }
+
+    public static function getPengaturanCafeSection(): Section
+    {
+        return Section::make('Pengaturan Cafe & POS')
                     ->description('Klasifikasi fungsi produk di cafe, ketersediaan menu, dan integrasi layar kasir')
                     ->columnSpanFull()
                     ->schema([
@@ -246,9 +303,12 @@ class BarangForm
                                     ->hidden(fn ($get) => in_array($get('tipe_barang'), ['kemasan', 'barang_pembantu'])),
                             ])->columnSpan(1),
                         ]),
-                    ]),
+                    ]);
+    }
 
-                Section::make('Harga Delivery / Aplikator Online')
+    public static function getHargaDeliverySection(): Section
+    {
+        return Section::make('Harga Delivery / Aplikator Online')
                     ->description('Atur harga jual khusus untuk masing-masing platform delivery (GoFood, GrabFood, ShopeeFood, Maxim, dll)')
                     ->collapsible()
                     ->columnSpanFull()
@@ -308,9 +368,12 @@ class BarangForm
                             ->defaultItems(0)
                             ->reorderable(false)
                             ->cloneable(),
-                    ]),
+                    ]);
+    }
 
-                Section::make('Harga Jual Bertingkat (3 Level Quantity)')
+    public static function getHargaBertingkatSection(): Section
+    {
+        return Section::make('Harga Jual Bertingkat (3 Level Quantity)')
                     ->description('Opsional: Atur potongan harga bertingkat berdasarkan kuantitas minimal pembelian.')
                     ->collapsible()
                     ->columnSpanFull()
@@ -363,9 +426,12 @@ class BarangForm
                                         ->default(0),
                                 ]),
                         ]),
-                    ]),
+                ]);
+    }
 
-                Section::make('Tingkatan Satuan & Harga Grosir (Level 2 - 4)')
+    public static function getTingkatanSatuanSection(): Section
+    {
+        return Section::make('Tingkatan Satuan & Harga Grosir (Level 2 - 4)')
                     ->description('Opsional: Atur konversi satuan bertingkat terhadap Satuan Pertama (Level 1). Kosongkan jika produk hanya memiliki 1 satuan.')
                     ->collapsible()
                     ->columnSpanFull()
@@ -441,16 +507,19 @@ class BarangForm
                                         ->placeholder('Otomatis jika kosong'),
                                 ]),
                             ]),
-                    ]),
+                    ]);
+    }
 
-                Section::make('Ambang Batas Stok Minimum (Global & Gudang)')
-                    ->description('Atur batas minimum stok fisik untuk memicu peringatan stok menipis pada sistem dasbor dan kasir (isi 0 atau matikan toggle untuk menonaktifkan pemantauan). Anda dapat memilih satuan yang diinginkan, dan nilai akan otomatis dikonversi ke Satuan Dasar saat disimpan.')
+    public static function getStokMinimumSection(): Section
+    {
+        return Section::make('Ambang Batas Stok Minimum (Global & Gudang)')
+                    ->description('Atur batas minimum stok fisik untuk memicu peringatan stok menipis pada sistem dasbor dan kasir. Nilai batas stok global otomatis dihitung dari akumulasi seluruh gudang yang aktif.')
                     ->collapsible()
                     ->columnSpanFull()
                     ->hidden(fn (Get $get) => $get('tipe_barang') === 'barang_jadi')
                     ->schema([
                         Hidden::make('stok_minimum')
-                            ->default(20),
+                            ->default(fn (Get $get, ?Barang $record) => BarangForm::hitungTotalStokMinimumGlobal($get, $record)),
 
                         Section::make('Ambang Batas Global (Seluruh Toko)')
                             ->compact()
@@ -459,86 +528,61 @@ class BarangForm
                                     Toggle::make('pantau_stok_global')
                                         ->label(fn (Get $get) => $get('pantau_stok_global') ? 'Pemantauan Global: AKTIF' : 'Pemantauan Global: DIMATIKAN')
                                         ->helperText(fn (Get $get) => $get('pantau_stok_global')
-                                            ? 'Peringatan aktif jika akumulasi seluruh stok toko berada di bawah ambang batas.'
-                                            : 'Pemantauan stok global dimatikan (peringatan untuk toko tidak akan muncul).')
+                                            ? 'Peringatan aktif jika akumulasi seluruh stok toko berada di bawah total batas stok global.'
+                                            : 'Pemantauan stok global toko dinonaktifkan (peringatan toko tidak akan muncul, namun gudang tetap dipantau).')
                                         ->dehydrated(false)
                                         ->live()
                                         ->default(true)
-                                        ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                            if ($get('sinkron_ke_gudang')) {
-                                                $gudangs = Gudang::all();
-                                                foreach ($gudangs as $g) {
-                                                    $set("status_pantau_gudang.{$g->id}", (bool) $state);
-                                                }
-                                            }
+                                        ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
+                                            BarangForm::syncGlobalStokMinimum($set, $get, $record);
                                         }),
 
-                                    Toggle::make('sinkron_ke_gudang')
-                                        ->label('Samakan ke Semua Gudang')
-                                        ->helperText('Otomatis menyamakan status on/off, jumlah, dan satuan di seluruh gudang di bawah.')
+                                    TextInput::make('stok_minimum_display')
+                                        ->label('Batas Stok Global (Akumulasi Gudang Aktif)')
+                                        ->numeric()
+                                        ->readOnly()
                                         ->dehydrated(false)
-                                        ->live()
-                                        ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                            if ($state) {
-                                                $globalActive = (bool) $get('pantau_stok_global');
-                                                $globalQty = (int) ($get('stok_minimum_display') ?? 20);
-                                                $globalUnit = $get('satuan_stok_minimum') ?: ($get('satuan') ?: 'Pcs');
-                                                $gudangs = Gudang::all();
-                                                foreach ($gudangs as $g) {
-                                                    $set("status_pantau_gudang.{$g->id}", $globalActive);
-                                                    $set("stok_minimum_gudang_display.{$g->id}", $globalQty);
-                                                    $set("satuan_stok_minimum_gudang.{$g->id}", $globalUnit);
-                                                }
+                                        ->default(fn (Get $get, ?Barang $record) => BarangForm::hitungTotalStokMinimumGlobal($get, $record))
+                                        ->suffix(fn (Get $get, ?Barang $record) => ($get('satuan') ?: ($record?->satuan ?? 'Pcs')) . ' (Satuan Dasar)')
+                                        ->helperText(function (Get $get, ?Barang $record) {
+                                            $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
+                                            $isGlobalActive = (bool) ($get('pantau_stok_global') ?? true);
+                                            if (! $isGlobalActive) {
+                                                return "Pemantauan global nonaktif (0 {$baseSat}). Peringatan tingkat toko dimatikan.";
                                             }
+                                            $total = BarangForm::hitungTotalStokMinimumGlobal($get, $record);
+                                            return "Total akumulasi otomatis dari seluruh gudang aktif: {$total} {$baseSat}.";
                                         }),
                                 ]),
-
-                                Grid::make(2)
-                                    ->visible(fn (Get $get) => (bool) $get('pantau_stok_global'))
-                                    ->schema([
-                                        TextInput::make('stok_minimum_display')
-                                            ->label('Batas Stok Global')
-                                            ->numeric()
-                                            ->minValue(0)
-                                            ->default(20)
-                                            ->dehydrated(false)
-                                            ->live()
-                                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                                if ($get('sinkron_ke_gudang')) {
-                                                    $gudangs = Gudang::all();
-                                                    foreach ($gudangs as $g) {
-                                                        $set("stok_minimum_gudang_display.{$g->id}", $state);
-                                                    }
-                                                }
-                                            })
-                                            ->helperText(function (Get $get, ?Barang $record) {
-                                                $qty = (int) ($get('stok_minimum_display') ?? 0);
-                                                $unit = $get('satuan_stok_minimum') ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
-                                                $faktor = BarangForm::getFaktorForUnit($unit, $get, $record);
-                                                $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
-                                                $total = $qty * $faktor;
-                                                return "{$total} {$baseSat} (Satuan Dasar)";
-                                            }),
-
-                                        Select::make('satuan_stok_minimum')
-                                            ->label('Satuan Global')
-                                            ->options(fn (Get $get, ?Barang $record) => BarangForm::getUnitOptions($get, $record))
-                                            ->default(fn (Get $get, ?Barang $record) => $get('satuan') ?: ($record?->satuan ?? 'Pcs'))
-                                            ->dehydrated(false)
-                                            ->live()
-                                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                                if ($get('sinkron_ke_gudang')) {
-                                                    $gudangs = Gudang::all();
-                                                    foreach ($gudangs as $g) {
-                                                        $set("satuan_stok_minimum_gudang.{$g->id}", $state);
-                                                    }
-                                                }
-                                            }),
-                                    ]),
                             ]),
 
                         Section::make('Batas Stok Minimum Khusus Per Gudang')
+                            ->key('section_gudang')
                             ->description('Tentukan ambang batas minimum dan satuan untuk masing-masing gudang (pemicu mutasi internal toko).')
+                            ->headerActions([
+                                Action::make('samakan_ke_semua_gudang')
+                                    ->label('Terapkan Nilai Gudang Pertama ke Semua')
+                                    ->icon('heroicon-m-arrows-pointing-out')
+                                    ->color('gray')
+                                    ->action(function (Set $set, Get $get, ?Barang $record) {
+                                        $gudangs = Gudang::all();
+                                        if ($gudangs->isEmpty()) {
+                                            return;
+                                        }
+                                        $firstGudang = $gudangs->first();
+                                        $firstStatus = (bool) ($get("status_pantau_gudang.{$firstGudang->id}") ?? true);
+                                        $firstQty = (int) ($get("stok_minimum_gudang_display.{$firstGudang->id}") ?? 20);
+                                        $firstUnit = $get("satuan_stok_minimum_gudang.{$firstGudang->id}") ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
+
+                                        foreach ($gudangs as $g) {
+                                            $set("status_pantau_gudang.{$g->id}", $firstStatus);
+                                            $set("stok_minimum_gudang_display.{$g->id}", $firstQty);
+                                            $set("satuan_stok_minimum_gudang.{$g->id}", $firstUnit);
+                                        }
+
+                                        BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                    }),
+                            ])
                             ->schema([
                                 Grid::make(2)->schema(function () {
                                     $gudangs = Gudang::all();
@@ -554,7 +598,10 @@ class BarangForm
                                                         : "Pemantauan khusus {$gudang->nama_gudang} sedang DIMATIKAN.")
                                                     ->dehydrated(false)
                                                     ->live()
-                                                    ->default(true),
+                                                    ->default(true)
+                                                    ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
+                                                        BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                                    }),
 
                                                 Grid::make(2)
                                                     ->visible(fn (Get $get) => (bool) $get("status_pantau_gudang.{$gudang->id}"))
@@ -566,6 +613,9 @@ class BarangForm
                                                             ->default(20)
                                                             ->dehydrated(false)
                                                             ->live()
+                                                            ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
+                                                                BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                                            })
                                                             ->helperText(function (Get $get, ?Barang $record) use ($gudang) {
                                                                 $qty = (int) ($get("stok_minimum_gudang_display.{$gudang->id}") ?? 0);
                                                                 $unit = $get("satuan_stok_minimum_gudang.{$gudang->id}") ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
@@ -580,14 +630,16 @@ class BarangForm
                                                             ->options(fn (Get $get, ?Barang $record) => BarangForm::getUnitOptions($get, $record))
                                                             ->default(fn (Get $get, ?Barang $record) => $get('satuan') ?: ($record?->satuan ?? 'Pcs'))
                                                             ->dehydrated(false)
-                                                            ->live(),
+                                                            ->live()
+                                                            ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
+                                                                BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                                            }),
                                                     ]),
                                             ]);
                                     }
                                     return $fields;
                                 }),
                             ]),
-                    ]),
-            ]);
+                    ]);
     }
 }

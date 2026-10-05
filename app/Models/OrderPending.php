@@ -6,6 +6,26 @@ use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\Models\Concerns\LogsActivity;
 use Spatie\Activitylog\Support\LogOptions;
 
+/**
+ * @property int $id
+ * @property string $kode_order
+ * @property int $gudang_id
+ * @property string $status
+ * @property int|null $karyawan_id
+ * @property int|null $user_id
+ * @property \Illuminate\Support\Carbon|null $tanggal
+ * @property int $diskon_persen
+ * @property int $total
+ * @property int $diskon
+ * @property int $neto
+ * @property int $biaya_kirim
+ * @property string|null $alamat_pengiriman
+ * @property int|null $aplikator_id
+ * @property string|null $catatan
+ * @property int|null $penjualan_id
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ */
 class OrderPending extends Model
 {
     use LogsActivity;

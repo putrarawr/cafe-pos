@@ -30,10 +30,24 @@ class CreateBarang extends CreateRecord
             if (! $isGlobalActive) {
                 $data['stok_minimum'] = 0;
             } else {
-                $qty = (int) ($raw['stok_minimum_display'] ?? $data['stok_minimum_display'] ?? 20);
-                $unit = $raw['satuan_stok_minimum'] ?? ($data['satuan_stok_minimum'] ?? ($data['satuan'] ?? 'Pcs'));
-                $faktor = BarangForm::getFaktorForUnit($unit, fn ($k) => $raw[$k] ?? ($data[$k] ?? null), null);
-                $data['stok_minimum'] = $qty * $faktor;
+                $gudangs = \App\Models\Gudang::all();
+                $statusGudangs = $raw['status_pantau_gudang'] ?? ($data['status_pantau_gudang'] ?? []);
+                $gudangDisplays = $raw['stok_minimum_gudang_display'] ?? ($data['stok_minimum_gudang_display'] ?? []);
+                $satuanGudangs = $raw['satuan_stok_minimum_gudang'] ?? ($data['satuan_stok_minimum_gudang'] ?? []);
+
+                $total = 0;
+                foreach ($gudangs as $g) {
+                    $isActive = array_key_exists($g->id, $statusGudangs)
+                        ? (bool) $statusGudangs[$g->id]
+                        : true;
+                    if ($isActive) {
+                        $qty = (int) ($gudangDisplays[$g->id] ?? 20);
+                        $unit = $satuanGudangs[$g->id] ?? ($data['satuan'] ?? 'Pcs');
+                        $faktor = BarangForm::getFaktorForUnit($unit, fn ($k) => $raw[$k] ?? ($data[$k] ?? null), null);
+                        $total += ($qty * $faktor);
+                    }
+                }
+                $data['stok_minimum'] = $total;
             }
         }
 

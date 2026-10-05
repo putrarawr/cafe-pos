@@ -843,7 +843,7 @@ class KasirController extends Controller
             'status' => $order->status,
             'gudang_id' => (int) $order->gudang_id,
             'nama_gudang' => $order->gudang?->nama_gudang ?? '-',
-            'tanggal' => $order->tanggal?->toDateString(),
+            'tanggal' => $order->tanggal ? \Illuminate\Support\Carbon::parse($order->tanggal)->toDateString() : null,
             'diskon_persen' => (int) $order->diskon_persen,
             'total' => (int) $order->total,
             'diskon' => (int) $order->diskon,
