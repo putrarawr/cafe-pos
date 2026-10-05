@@ -114,9 +114,22 @@
             </div>
 
             <div style="background: #111113; border: 1px solid #27272a; border-radius: 6px; padding: 10px 12px;">
-                <div style="font-size: 10px; font-weight: 700; color: #a1a1aa; text-transform: uppercase;">Defisit</div>
-                <div style="font-size: 14px; font-weight: 700; color: {{ $record->defisit > 0 ? '#f87171' : '#4ade80' }}; margin-top: 2px;">
-                    {{ $record->defisit > 0 ? ($barang ? $barang->formatStokBerantai($record->defisit) : $record->defisit) : 'Aman' }}
+                <div style="font-size: 10px; font-weight: 700; color: #a1a1aa; text-transform: uppercase;">Batas Maksimum</div>
+                <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 2px;">
+                    {{ (int) $record->stok_maksimum > 0 ? ($barang ? $barang->formatStokBerantai((int) $record->stok_maksimum) : $record->stok_maksimum) : 'Bebas' }}
+                </div>
+            </div>
+
+            <div style="background: #111113; border: 1px solid #27272a; border-radius: 6px; padding: 10px 12px;">
+                <div style="font-size: 10px; font-weight: 700; color: #a1a1aa; text-transform: uppercase;">Defisit / Status</div>
+                <div style="font-size: 14px; font-weight: 700; color: {{ $record->defisit > 0 ? '#f87171' : ($record->is_overstock ? '#38bdf8' : '#4ade80') }}; margin-top: 2px;">
+                    @if($record->defisit > 0)
+                        {{ $barang ? $barang->formatStokBerantai($record->defisit) : $record->defisit }}
+                    @elseif($record->is_overstock)
+                        Over (+{{ $barang ? $barang->formatStokBerantai($record->kelebihan_stok) : $record->kelebihan_stok }})
+                    @else
+                        Aman
+                    @endif
                 </div>
             </div>
         </div>
@@ -135,10 +148,11 @@
             <table style="width: 100%; border-collapse: collapse; text-align: left;">
                 <thead>
                     <tr>
-                        <th style="width: 32%;">Lokasi Gudang</th>
-                        <th style="width: 24%; text-align: center;">Sisa Stok</th>
-                        <th style="width: 20%; text-align: center;">Batas Minimum</th>
-                        <th style="width: 24%; text-align: center;">Status</th>
+                        <th style="width: 28%;">Lokasi Gudang</th>
+                        <th style="width: 18%; text-align: center;">Sisa Stok</th>
+                        <th style="width: 18%; text-align: center;">Batas Minimum</th>
+                        <th style="width: 18%; text-align: center;">Batas Maksimum</th>
+                        <th style="width: 18%; text-align: center;">Status</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -148,6 +162,7 @@
                             $rowBg = $isCurrent ? '#202024' : '#18181b';
                             $stokFormatted = $barang ? $barang->formatStokBerantai((int) $bg->stok) : $bg->stok;
                             $minFormatted = $barang ? $barang->formatStokBerantai((int) $bg->stok_minimum) : $bg->stok_minimum;
+                            $maxFormatted = (int) $bg->stok_maksimum > 0 ? ($barang ? $barang->formatStokBerantai((int) $bg->stok_maksimum) : $bg->stok_maksimum) : '-';
                         @endphp
                         <tr style="background: {{ $rowBg }}; border-left: {{ $isCurrent ? '3px solid #38bdf8' : 'none' }};">
                             <td style="font-weight: 600; color: #ffffff;">
@@ -158,11 +173,14 @@
                                     </span>
                                 @endif
                             </td>
-                            <td style="text-align: center; font-weight: 700; color: {{ $bg->stok <= 0 ? '#f87171' : ($bg->status_stok === 'menipis' ? '#fdba74' : '#86efac') }};">
+                            <td style="text-align: center; font-weight: 700; color: {{ $bg->stok <= 0 ? '#f87171' : ($bg->status_stok === 'menipis' ? '#fdba74' : ($bg->status_stok === 'overstock' ? '#38bdf8' : '#86efac')) }};">
                                 {{ $stokFormatted }}
                             </td>
                             <td style="text-align: center; color: #a1a1aa;">
                                 {{ $minFormatted }}
+                            </td>
+                            <td style="text-align: center; color: #a1a1aa;">
+                                {{ $maxFormatted }}
                             </td>
                             <td style="text-align: center;">
                                 @if($bg->status_stok === 'habis')
@@ -172,6 +190,10 @@
                                 @elseif($bg->status_stok === 'menipis')
                                     <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #451a03; color: #fed7aa; border: 1px solid #c2410c;">
                                         Menipis (-{{ $barang ? $barang->formatStokBerantai($bg->defisit) : $bg->defisit }})
+                                    </span>
+                                @elseif($bg->status_stok === 'overstock')
+                                    <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #082f49; color: #7dd3fc; border: 1px solid #0284c7;">
+                                        Overstock (+{{ $barang ? $barang->formatStokBerantai($bg->kelebihan_stok) : $bg->kelebihan_stok }})
                                     </span>
                                 @else
                                     <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #052e16; color: #bbf7d0; border: 1px solid #166534;">
@@ -190,6 +212,9 @@
                         </td>
                         <td style="padding: 12px 14px; text-align: center; color: #d4d4d8;">
                             {{ $barang ? $barang->formatStokBerantai((int) $totalMinAll) : $totalMinAll }}
+                        </td>
+                        <td style="padding: 12px 14px; text-align: center; color: #d4d4d8;">
+                            {{ ($barang?->stok_maksimum ?? 0) > 0 ? ($barang ? $barang->formatStokBerantai((int) $barang->stok_maksimum) : $barang->stok_maksimum) : '-' }}
                         </td>
                         <td style="padding: 12px 14px; text-align: center;">
                             @if($totalStokAll <= $barang?->stok_minimum && ($barang?->stok_minimum ?? 0) > 0)

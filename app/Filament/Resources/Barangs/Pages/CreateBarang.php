@@ -35,7 +35,11 @@ class CreateBarang extends CreateRecord
                 $gudangDisplays = $raw['stok_minimum_gudang_display'] ?? ($data['stok_minimum_gudang_display'] ?? []);
                 $satuanGudangs = $raw['satuan_stok_minimum_gudang'] ?? ($data['satuan_stok_minimum_gudang'] ?? []);
 
+                $maxGudangDisplays = $raw['stok_maksimum_gudang_display'] ?? ($data['stok_maksimum_gudang_display'] ?? []);
+                $satuanMaxGudangs = $raw['satuan_stok_maksimum_gudang'] ?? ($data['satuan_stok_maksimum_gudang'] ?? []);
+
                 $total = 0;
+                $totalMax = 0;
                 foreach ($gudangs as $g) {
                     $isActive = array_key_exists($g->id, $statusGudangs)
                         ? (bool) $statusGudangs[$g->id]
@@ -45,20 +49,31 @@ class CreateBarang extends CreateRecord
                         $unit = $satuanGudangs[$g->id] ?? ($data['satuan'] ?? 'Pcs');
                         $faktor = BarangForm::getFaktorForUnit($unit, fn ($k) => $raw[$k] ?? ($data[$k] ?? null), null);
                         $total += ($qty * $faktor);
+
+                        $qtyMax = (int) ($maxGudangDisplays[$g->id] ?? 0);
+                        if ($qtyMax > 0) {
+                            $unitMax = $satuanMaxGudangs[$g->id] ?? ($data['satuan'] ?? 'Pcs');
+                            $faktorMax = BarangForm::getFaktorForUnit($unitMax, fn ($k) => $raw[$k] ?? ($data[$k] ?? null), null);
+                            $totalMax += ($qtyMax * $faktorMax);
+                        }
                     }
                 }
                 $data['stok_minimum'] = $total;
+                $data['stok_maksimum'] = $totalMax;
             }
         }
 
         unset(
             $data['pantau_stok_global'],
             $data['stok_minimum_display'],
+            $data['stok_maksimum_display'],
             $data['satuan_stok_minimum'],
             $data['sinkron_ke_gudang'],
             $data['status_pantau_gudang'],
             $data['stok_minimum_gudang_display'],
-            $data['satuan_stok_minimum_gudang']
+            $data['satuan_stok_minimum_gudang'],
+            $data['stok_maksimum_gudang_display'],
+            $data['satuan_stok_maksimum_gudang']
         );
 
         return $data;
@@ -76,6 +91,7 @@ class CreateBarang extends CreateRecord
                 ->where('barang_id', $recordId)
                 ->update([
                     'stok_minimum' => 0,
+                    'stok_maksimum' => 0,
                     'updated_at' => now(),
                 ]);
             return;
@@ -85,6 +101,8 @@ class CreateBarang extends CreateRecord
         $statusGudangs = $raw['status_pantau_gudang'] ?? [];
         $gudangDisplays = $raw['stok_minimum_gudang_display'] ?? [];
         $satuanGudangs = $raw['satuan_stok_minimum_gudang'] ?? [];
+        $maxGudangDisplays = $raw['stok_maksimum_gudang_display'] ?? [];
+        $satuanMaxGudangs = $raw['satuan_stok_maksimum_gudang'] ?? [];
 
         foreach ($gudangs as $g) {
             $gudangId = $g->id;
@@ -94,11 +112,17 @@ class CreateBarang extends CreateRecord
 
             if (! $isActive) {
                 $baseVal = 0;
+                $baseMaxVal = 0;
             } else {
                 $qtyVal = $gudangDisplays[$gudangId] ?? 20;
                 $unit = $satuanGudangs[$gudangId] ?? ($record->satuan ?? 'Pcs');
                 $faktor = $record->getFaktorKonversi($unit);
                 $baseVal = (int) $qtyVal * $faktor;
+
+                $qtyMaxVal = (int) ($maxGudangDisplays[$gudangId] ?? 0);
+                $unitMax = $satuanMaxGudangs[$gudangId] ?? ($record->satuan ?? 'Pcs');
+                $faktorMax = $record->getFaktorKonversi($unitMax);
+                $baseMaxVal = (int) $qtyMaxVal * $faktorMax;
             }
 
             $existing = \Illuminate\Support\Facades\DB::table('barang_gudang')
@@ -111,6 +135,7 @@ class CreateBarang extends CreateRecord
                     ->where('id', $existing->id)
                     ->update([
                         'stok_minimum' => $baseVal,
+                        'stok_maksimum' => $baseMaxVal,
                         'updated_at' => now(),
                     ]);
             } else {
@@ -119,6 +144,7 @@ class CreateBarang extends CreateRecord
                     'gudang_id' => $gudangId,
                     'stok' => 0,
                     'stok_minimum' => $baseVal,
+                    'stok_maksimum' => $baseMaxVal,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);

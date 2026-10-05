@@ -147,6 +147,39 @@ class BarangForm
         $set('stok_minimum', $total);
     }
 
+    public static function hitungTotalStokMaksimumGlobal(Get|callable $get, ?Barang $record = null): int
+    {
+        $getVal = fn (string $key) => $get instanceof Get ? $get($key) : (is_callable($get) ? $get($key) : null);
+
+        $gudangs = Gudang::all();
+        $total = 0;
+
+        foreach ($gudangs as $g) {
+            $isActive = $getVal("status_pantau_gudang.{$g->id}");
+            if ($isActive === null) {
+                $isActive = true;
+            }
+
+            if ((bool) $isActive) {
+                $qty = (int) ($getVal("stok_maksimum_gudang_display.{$g->id}") ?? 0);
+                if ($qty > 0) {
+                    $unit = $getVal("satuan_stok_maksimum_gudang.{$g->id}") ?: ($getVal('satuan') ?: ($record?->satuan ?? 'Pcs'));
+                    $faktor = static::getFaktorForUnit($unit, $get, $record);
+                    $total += ($qty * $faktor);
+                }
+            }
+        }
+
+        return $total;
+    }
+
+    public static function syncGlobalStokMaksimum(Set $set, Get|callable $get, ?Barang $record = null): void
+    {
+        $total = static::hitungTotalStokMaksimumGlobal($get, $record);
+        $set('stok_maksimum_display', $total);
+        $set('stok_maksimum', $total);
+    }
+
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -512,8 +545,8 @@ class BarangForm
 
     public static function getStokMinimumSection(): Section
     {
-        return Section::make('Ambang Batas Stok Minimum (Global & Gudang)')
-                    ->description('Atur batas minimum stok fisik untuk memicu peringatan stok menipis pada sistem dasbor dan kasir. Nilai batas stok global otomatis dihitung dari akumulasi seluruh gudang yang aktif.')
+        return Section::make('Ambang Batas Stok Minimum & Maksimum (Global & Gudang)')
+                    ->description('Atur batas minimum (alarm stok menipis) dan batas maksimum (pencegahan overstock saat pembelian & mutasi). Nilai global otomatis terakumulasi dari gudang aktif.')
                     ->collapsible()
                     ->columnSpanFull()
                     ->hidden(fn (Get $get) => $get('tipe_barang') === 'barang_jadi')
@@ -521,24 +554,28 @@ class BarangForm
                         Hidden::make('stok_minimum')
                             ->default(fn (Get $get, ?Barang $record) => BarangForm::hitungTotalStokMinimumGlobal($get, $record)),
 
+                        Hidden::make('stok_maksimum')
+                            ->default(fn (Get $get, ?Barang $record) => BarangForm::hitungTotalStokMaksimumGlobal($get, $record)),
+
                         Section::make('Ambang Batas Global (Seluruh Toko)')
                             ->compact()
                             ->schema([
-                                Grid::make(2)->schema([
+                                Grid::make(3)->schema([
                                     Toggle::make('pantau_stok_global')
                                         ->label(fn (Get $get) => $get('pantau_stok_global') ? 'Pemantauan Global: AKTIF' : 'Pemantauan Global: DIMATIKAN')
                                         ->helperText(fn (Get $get) => $get('pantau_stok_global')
-                                            ? 'Peringatan aktif jika akumulasi seluruh stok toko berada di bawah total batas stok global.'
-                                            : 'Pemantauan stok global toko dinonaktifkan (peringatan toko tidak akan muncul, namun gudang tetap dipantau).')
+                                            ? 'Peringatan aktif jika akumulasi seluruh stok toko berada di bawah batas minimum.'
+                                            : 'Pemantauan stok global toko dinonaktifkan (peringatan toko mati, namun gudang tetap dipantau).')
                                         ->dehydrated(false)
                                         ->live()
                                         ->default(true)
                                         ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
                                             BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                            BarangForm::syncGlobalStokMaksimum($set, $get, $record);
                                         }),
 
                                     TextInput::make('stok_minimum_display')
-                                        ->label('Batas Stok Global (Akumulasi Gudang Aktif)')
+                                        ->label('Batas Minimum Global')
                                         ->numeric()
                                         ->readOnly()
                                         ->dehydrated(false)
@@ -548,17 +585,33 @@ class BarangForm
                                             $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
                                             $isGlobalActive = (bool) ($get('pantau_stok_global') ?? true);
                                             if (! $isGlobalActive) {
-                                                return "Pemantauan global nonaktif (0 {$baseSat}). Peringatan tingkat toko dimatikan.";
+                                                return "Pemantauan global nonaktif (0 {$baseSat}). Peringatan toko dimatikan.";
                                             }
                                             $total = BarangForm::hitungTotalStokMinimumGlobal($get, $record);
-                                            return "Total akumulasi otomatis dari seluruh gudang aktif: {$total} {$baseSat}.";
+                                            return "Total akumulasi minimum seluruh gudang: {$total} {$baseSat}.";
+                                        }),
+
+                                    TextInput::make('stok_maksimum_display')
+                                        ->label('Batas Maksimum Global')
+                                        ->numeric()
+                                        ->readOnly()
+                                        ->dehydrated(false)
+                                        ->default(fn (Get $get, ?Barang $record) => BarangForm::hitungTotalStokMaksimumGlobal($get, $record))
+                                        ->suffix(fn (Get $get, ?Barang $record) => ($get('satuan') ?: ($record?->satuan ?? 'Pcs')) . ' (Satuan Dasar)')
+                                        ->helperText(function (Get $get, ?Barang $record) {
+                                            $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
+                                            $total = BarangForm::hitungTotalStokMaksimumGlobal($get, $record);
+                                            if ($total <= 0) {
+                                                return 'Tanpa batas maksimum toko (unlimited).';
+                                            }
+                                            return "Total akumulasi maksimum seluruh gudang: {$total} {$baseSat}.";
                                         }),
                                 ]),
                             ]),
 
-                        Section::make('Batas Stok Minimum Khusus Per Gudang')
+                        Section::make('Batas Stok Minimum & Maksimum Khusus Per Gudang')
                             ->key('section_gudang')
-                            ->description('Tentukan ambang batas minimum dan satuan untuk masing-masing gudang (pemicu mutasi internal toko).')
+                            ->description('Tentukan batas minimum dan batas maksimum untuk masing-masing gudang fisik.')
                             ->headerActions([
                                 Action::make('samakan_ke_semua_gudang')
                                     ->label('Terapkan Nilai Gudang Pertama ke Semua')
@@ -571,16 +624,21 @@ class BarangForm
                                         }
                                         $firstGudang = $gudangs->first();
                                         $firstStatus = (bool) ($get("status_pantau_gudang.{$firstGudang->id}") ?? true);
-                                        $firstQty = (int) ($get("stok_minimum_gudang_display.{$firstGudang->id}") ?? 20);
-                                        $firstUnit = $get("satuan_stok_minimum_gudang.{$firstGudang->id}") ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
+                                        $firstQtyMin = (int) ($get("stok_minimum_gudang_display.{$firstGudang->id}") ?? 20);
+                                        $firstUnitMin = $get("satuan_stok_minimum_gudang.{$firstGudang->id}") ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
+                                        $firstQtyMax = (int) ($get("stok_maksimum_gudang_display.{$firstGudang->id}") ?? 0);
+                                        $firstUnitMax = $get("satuan_stok_maksimum_gudang.{$firstGudang->id}") ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
 
                                         foreach ($gudangs as $g) {
                                             $set("status_pantau_gudang.{$g->id}", $firstStatus);
-                                            $set("stok_minimum_gudang_display.{$g->id}", $firstQty);
-                                            $set("satuan_stok_minimum_gudang.{$g->id}", $firstUnit);
+                                            $set("stok_minimum_gudang_display.{$g->id}", $firstQtyMin);
+                                            $set("satuan_stok_minimum_gudang.{$g->id}", $firstUnitMin);
+                                            $set("stok_maksimum_gudang_display.{$g->id}", $firstQtyMax);
+                                            $set("satuan_stok_maksimum_gudang.{$g->id}", $firstUnitMax);
                                         }
 
                                         BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                        BarangForm::syncGlobalStokMaksimum($set, $get, $record);
                                     }),
                             ])
                             ->schema([
@@ -594,20 +652,21 @@ class BarangForm
                                                 Toggle::make("status_pantau_gudang.{$gudang->id}")
                                                     ->label(fn (Get $get) => $get("status_pantau_gudang.{$gudang->id}") ? "Pemantauan {$gudang->nama_gudang}: AKTIF" : "Pemantauan {$gudang->nama_gudang}: DIMATIKAN")
                                                     ->helperText(fn (Get $get) => $get("status_pantau_gudang.{$gudang->id}")
-                                                        ? "Peringatan stok menipis aktif khusus {$gudang->nama_gudang}."
+                                                        ? "Batas stok aktif khusus {$gudang->nama_gudang}."
                                                         : "Pemantauan khusus {$gudang->nama_gudang} sedang DIMATIKAN.")
                                                     ->dehydrated(false)
                                                     ->live()
                                                     ->default(true)
                                                     ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
                                                         BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                                        BarangForm::syncGlobalStokMaksimum($set, $get, $record);
                                                     }),
 
                                                 Grid::make(2)
                                                     ->visible(fn (Get $get) => (bool) $get("status_pantau_gudang.{$gudang->id}"))
                                                     ->schema([
                                                         TextInput::make("stok_minimum_gudang_display.{$gudang->id}")
-                                                            ->label('Batas Stok')
+                                                            ->label('Batas Minimum')
                                                             ->numeric()
                                                             ->minValue(0)
                                                             ->default(20)
@@ -622,17 +681,51 @@ class BarangForm
                                                                 $faktor = BarangForm::getFaktorForUnit($unit, $get, $record);
                                                                 $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
                                                                 $total = $qty * $faktor;
-                                                                return "{$total} {$baseSat} (Satuan Dasar)";
+                                                                return "Min: {$total} {$baseSat}";
                                                             }),
 
                                                         Select::make("satuan_stok_minimum_gudang.{$gudang->id}")
-                                                            ->label('Satuan')
+                                                            ->label('Satuan Min')
                                                             ->options(fn (Get $get, ?Barang $record) => BarangForm::getUnitOptions($get, $record))
-                                                            ->default(fn (Get $get, ?Barang $record) => $get('satuan') ?: ($record?->satuan ?? 'Pcs'))
+                                                            ->placeholder(fn (Get $get, ?Barang $record) => ($get('satuan') ?: ($record?->satuan ?? 'Pcs')) . ' (Dasar)')
+                                                            ->nullable()
                                                             ->dehydrated(false)
                                                             ->live()
                                                             ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
                                                                 BarangForm::syncGlobalStokMinimum($set, $get, $record);
+                                                            }),
+
+                                                        TextInput::make("stok_maksimum_gudang_display.{$gudang->id}")
+                                                            ->label('Batas Maksimum (0 = Bebas)')
+                                                            ->numeric()
+                                                            ->minValue(0)
+                                                            ->default(0)
+                                                            ->dehydrated(false)
+                                                            ->live()
+                                                            ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
+                                                                BarangForm::syncGlobalStokMaksimum($set, $get, $record);
+                                                            })
+                                                            ->helperText(function (Get $get, ?Barang $record) use ($gudang) {
+                                                                $qty = (int) ($get("stok_maksimum_gudang_display.{$gudang->id}") ?? 0);
+                                                                if ($qty <= 0) {
+                                                                    return 'Kapasitas tanpa batas';
+                                                                }
+                                                                $unit = $get("satuan_stok_maksimum_gudang.{$gudang->id}") ?: ($get('satuan') ?: ($record?->satuan ?? 'Pcs'));
+                                                                $faktor = BarangForm::getFaktorForUnit($unit, $get, $record);
+                                                                $baseSat = $get('satuan') ?: ($record?->satuan ?? 'Pcs');
+                                                                $total = $qty * $faktor;
+                                                                return "Maks: {$total} {$baseSat}";
+                                                            }),
+
+                                                        Select::make("satuan_stok_maksimum_gudang.{$gudang->id}")
+                                                            ->label('Satuan Maks')
+                                                            ->options(fn (Get $get, ?Barang $record) => BarangForm::getUnitOptions($get, $record))
+                                                            ->placeholder(fn (Get $get, ?Barang $record) => ($get('satuan') ?: ($record?->satuan ?? 'Pcs')) . ' (Dasar)')
+                                                            ->nullable()
+                                                            ->dehydrated(false)
+                                                            ->live()
+                                                            ->afterStateUpdated(function ($state, Set $set, Get $get, ?Barang $record) {
+                                                                BarangForm::syncGlobalStokMaksimum($set, $get, $record);
                                                             }),
                                                     ]),
                                             ]);

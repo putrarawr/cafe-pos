@@ -165,6 +165,7 @@ class KontrolStokGudang extends Page implements HasForms, HasTable
                                 ->options([
                                     'menipis' => 'Hanya Stok Menipis',
                                     'habis' => 'Hanya Stok Habis',
+                                    'overstock' => 'Stok Melebihi Maksimum (Overstock)',
                                 ])
                                 ->live()
                                 ->afterStateUpdated(fn () => $this->resetTable()),
@@ -205,13 +206,16 @@ class KontrolStokGudang extends Page implements HasForms, HasTable
                     $query->whereHas('barang', fn (Builder $q) => $q->where('jenis_barang_id', $jenisBarangId));
                 }
 
-                // Filter Status: hanya tampilkan stok menipis dan habis (stok aman tidak dimuat ke tabel)
+                // Filter Status: hanya tampilkan stok menipis dan habis (stok aman tidak dimuat ke tabel), atau overstock
                 if ($statusStok === 'habis') {
                     $query->where('barang_gudang.stok', '<=', 0);
                 } elseif ($statusStok === 'menipis') {
                     $query->where('barang_gudang.stok_minimum', '>', 0)
                         ->whereColumn('barang_gudang.stok', '<=', 'barang_gudang.stok_minimum')
                         ->where('barang_gudang.stok', '>', 0);
+                } elseif ($statusStok === 'overstock') {
+                    $query->where('barang_gudang.stok_maksimum', '>', 0)
+                        ->whereColumn('barang_gudang.stok', '>', 'barang_gudang.stok_maksimum');
                 } else {
                     // Default: hanya tampilkan stok menipis ATAU stok habis
                     $query->where(function (Builder $q) {
@@ -223,9 +227,12 @@ class KontrolStokGudang extends Page implements HasForms, HasTable
                     });
                 }
 
-                // Prioritaskan yang defisit paling besar, lalu stok terkecil
+                // Prioritaskan yang selisih batas paling besar, lalu stok terkecil
                 return $query
-                    ->orderByRaw('(CASE WHEN barang_gudang.stok_minimum > 0 AND barang_gudang.stok <= barang_gudang.stok_minimum THEN (barang_gudang.stok_minimum - barang_gudang.stok) ELSE 0 END) DESC')
+                    ->orderByRaw('(CASE 
+                        WHEN barang_gudang.stok_maksimum > 0 AND barang_gudang.stok > barang_gudang.stok_maksimum THEN (barang_gudang.stok - barang_gudang.stok_maksimum)
+                        WHEN barang_gudang.stok_minimum > 0 AND barang_gudang.stok <= barang_gudang.stok_minimum THEN (barang_gudang.stok_minimum - barang_gudang.stok) 
+                        ELSE 0 END) DESC')
                     ->orderBy('barang_gudang.stok', 'asc');
             })
             ->columns([
@@ -260,6 +267,7 @@ class KontrolStokGudang extends Page implements HasForms, HasTable
                     ->color(fn (BarangGudang $record) => match ($record->status_stok) {
                         'habis' => 'danger',
                         'menipis' => 'warning',
+                        'overstock' => 'info',
                         default => 'success',
                     }),
 
@@ -314,11 +322,13 @@ class KontrolStokGudang extends Page implements HasForms, HasTable
                     ->formatStateUsing(fn ($state) => match ($state) {
                         'habis' => 'Habis',
                         'menipis' => 'Menipis',
+                        'overstock' => 'Overstock',
                         default => 'Aman',
                     })
                     ->color(fn ($state) => match ($state) {
                         'habis' => 'danger',
                         'menipis' => 'warning',
+                        'overstock' => 'info',
                         default => 'success',
                     }),
             ])

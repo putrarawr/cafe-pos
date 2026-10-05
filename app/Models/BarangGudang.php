@@ -11,6 +11,15 @@ class BarangGudang extends Model
 
     protected $guarded = ['id'];
 
+    protected function casts(): array
+    {
+        return [
+            'stok' => 'integer',
+            'stok_minimum' => 'integer',
+            'stok_maksimum' => 'integer',
+        ];
+    }
+
     public function barang(): BelongsTo
     {
         return $this->belongsTo(Barang::class, 'barang_id');
@@ -33,13 +42,35 @@ class BarangGudang extends Model
     }
 
     /**
+     * Cek apakah stok di gudang ini melebihi kapasitas maksimum.
+     */
+    public function getIsOverstockAttribute(): bool
+    {
+        $max = (int) ($this->stok_maksimum ?? 0);
+
+        return $max > 0 && (int) $this->stok > $max;
+    }
+
+    /**
+     * Hitung jumlah unit yang melebihi batas maksimum.
+     */
+    public function getKelebihanStokAttribute(): int
+    {
+        $max = (int) ($this->stok_maksimum ?? 0);
+        $current = (int) ($this->stok ?? 0);
+
+        return ($max > 0 && $current > $max) ? ($current - $max) : 0;
+    }
+
+    /**
      * Tentukan status stok untuk gudang ini.
-     * Mengembalikan: 'habis', 'menipis', atau 'aman'
+     * Mengembalikan: 'habis', 'menipis', 'overstock', atau 'aman'
      */
     public function getStatusStokAttribute(): string
     {
         $current = (int) ($this->stok ?? 0);
         $min = (int) ($this->stok_minimum ?? 0);
+        $max = (int) ($this->stok_maksimum ?? 0);
 
         if ($current <= 0) {
             return 'habis';
@@ -47,6 +78,10 @@ class BarangGudang extends Model
 
         if ($min > 0 && $current <= $min) {
             return 'menipis';
+        }
+
+        if ($max > 0 && $current > $max) {
+            return 'overstock';
         }
 
         return 'aman';
