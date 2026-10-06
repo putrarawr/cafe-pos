@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Barangs\BarangResource;
+use App\Filament\Resources\Barangs\Pages\CreateBarang;
 use App\Filament\Resources\Barangs\Pages\EditBarang;
 use App\Filament\Resources\Barangs\RelationManagers\GudangsRelationManager;
 use App\Filament\Widgets\StatsOverviewWidget;
@@ -10,6 +11,7 @@ use App\Models\Barang;
 use App\Models\Gudang;
 use App\Models\User;
 use App\Services\StokService;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -116,22 +118,19 @@ class StokMinimumDinamisTest extends TestCase
 
         $lowStockQueryCount = Barang::query()
             ->where('tipe_barang', '!=', 'barang_jadi')
-            ->where(function ($query) {
-                $query->where(function ($q) {
-                    $q->where('barang.stok_minimum', '>', 0)
-                        ->whereRaw('(SELECT COALESCE(SUM(stok), 0) FROM barang_gudang WHERE barang_gudang.barang_id = barang.id) <= barang.stok_minimum');
-                })->orWhereHas('gudangs', function ($q) {
-                    $q->where('barang_gudang.stok_minimum', '>', 0)
-                        ->whereColumn('barang_gudang.stok', '<=', 'barang_gudang.stok_minimum');
-                });
-            })
+            ->where('barang.stok_minimum', '>', 0)
+            ->whereRaw('(SELECT COALESCE(SUM(stok), 0) FROM barang_gudang WHERE barang_gudang.barang_id = barang.id) <= barang.stok_minimum')
             ->count();
 
-        $this->assertSame(2, $lowStockQueryCount);
+        // Di dasbor (Alarm Belanja Supplier), hanya barang dengan total toko <= global min yang dihitung
+        // barangMenipisGudang totalnya 24 > 5 (aman di level toko, dipantau di Kontrol Stok Gudang)
+        // barangMenipisGlobal totalnya 8 <= 20 (menipis di level toko, perlu order supplier)
+        $this->assertSame(1, $lowStockQueryCount);
 
         Livewire::test(StatsOverviewWidget::class)
             ->assertSuccessful()
-            ->assertSee('Stok Menipis');
+            ->assertSee('Stok Menipis')
+            ->assertSee('1&nbsp;item', false);
     }
 
     public function test_kasir_controller_memuat_stok_minimum_dan_mapping_gudang(): void
@@ -233,8 +232,6 @@ class StokMinimumDinamisTest extends TestCase
 
         Livewire::test(EditBarang::class, ['record' => $barang->getRouteKey()])
             ->fillForm([
-                'stok_minimum_display' => 30,
-                'satuan_stok_minimum' => 'Pcs',
                 'stok_minimum_gudang_display' => [
                     $gudang1->id => 25,
                     $gudang2->id => 15,
@@ -247,7 +244,8 @@ class StokMinimumDinamisTest extends TestCase
             ->call('save')
             ->assertHasNoFormErrors();
 
-        $this->assertSame(30, (int) $barang->fresh()->stok_minimum);
+        // Total akumulasi global otomatis = 25 + 15 = 40 Pcs
+        $this->assertSame(40, (int) $barang->fresh()->stok_minimum);
         $this->assertSame(25, (int) DB::table('barang_gudang')->where('barang_id', $barang->id)->where('gudang_id', $gudang1->id)->value('stok_minimum'));
         $this->assertSame(15, (int) DB::table('barang_gudang')->where('barang_id', $barang->id)->where('gudang_id', $gudang2->id)->value('stok_minimum'));
     }
@@ -267,7 +265,7 @@ class StokMinimumDinamisTest extends TestCase
             'satuan' => 'Pcs',
             'satuan_2' => 'Dus',
             'isi_satuan_2' => 24,
-            'stok_minimum' => 48, // 48 Pcs = 2 Dus
+            'stok_minimum' => 96, // 96 Pcs (72 + 24)
             'harga_beli' => 5000,
             'harga_jual' => 8000,
         ]);
@@ -275,19 +273,16 @@ class StokMinimumDinamisTest extends TestCase
         $barang->gudangs()->attach($gudang1->id, ['stok' => 100, 'stok_minimum' => 72]); // 72 Pcs = 3 Dus
         $barang->gudangs()->attach($gudang2->id, ['stok' => 50, 'stok_minimum' => 24]);  // 24 Pcs = 1 Dus
 
-        // 1. Verifikasi dekonstruksi otomatis saat form dimuat
+        // 1. Verifikasi akumulasi global otomatis dalam Satuan Dasar saat form dimuat
         $component = Livewire::test(EditBarang::class, ['record' => $barang->getRouteKey()]);
         $component->assertSchemaStateSet([
-            'stok_minimum_display' => 2,
-            'satuan_stok_minimum' => 'Dus',
+            'stok_minimum_display' => 96, // 72 + 24 = 96 Pcs
         ]);
         $this->assertSame(3, (int) ($component->get('data.stok_minimum_gudang_display')[$gudang1->id] ?? null));
         $this->assertSame('Dus', $component->get('data.satuan_stok_minimum_gudang')[$gudang1->id] ?? null);
 
-        // 2. Simpan dengan satuan berbeda: Global = 4 Dus (96 Pcs), Gudang 1 = 10 Pcs (10 Pcs)
+        // 2. Simpan dengan satuan berbeda: Gudang 1 = 10 Pcs (10 Pcs), Gudang 2 = 2 Dus (48 Pcs)
         $component->fillForm([
-            'stok_minimum_display' => 4,
-            'satuan_stok_minimum' => 'Dus',
             'stok_minimum_gudang_display' => [
                 $gudang1->id => 10,
                 $gudang2->id => 2,
@@ -300,8 +295,8 @@ class StokMinimumDinamisTest extends TestCase
             ->call('save')
             ->assertHasNoFormErrors();
 
-        // 3. Verifikasi tersimpan dalam Satuan Dasar (Level 1) di database
-        $this->assertSame(96, (int) $barang->fresh()->stok_minimum); // 4 Dus * 24 = 96 Pcs
+        // 3. Verifikasi tersimpan dalam Satuan Dasar: Global = 10 + 48 = 58 Pcs
+        $this->assertSame(58, (int) $barang->fresh()->stok_minimum);
         $this->assertSame(10, (int) DB::table('barang_gudang')->where('barang_id', $barang->id)->where('gudang_id', $gudang1->id)->value('stok_minimum')); // 10 Pcs * 1 = 10 Pcs
         $this->assertSame(48, (int) DB::table('barang_gudang')->where('barang_id', $barang->id)->where('gudang_id', $gudang2->id)->value('stok_minimum')); // 2 Dus * 24 = 48 Pcs
     }
@@ -377,6 +372,69 @@ class StokMinimumDinamisTest extends TestCase
         $this->assertFalse((bool) $component->get('data.pantau_stok_global'));
         $this->assertFalse((bool) ($component->get('data.status_pantau_gudang')[$gudang1->id] ?? true));
         $this->assertTrue((bool) ($component->get('data.status_pantau_gudang')[$gudang2->id] ?? false));
+    }
+
+    public function test_aksi_samakan_ke_semua_gudang_menyalin_nilai_gudang_pertama(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $gudang1 = Gudang::factory()->create(['nama_gudang' => 'Gudang 1']);
+        $gudang2 = Gudang::factory()->create(['nama_gudang' => 'Gudang 2']);
+
+        $barang = Barang::factory()->create([
+            'nama_barang' => 'Barang Sync Test',
+            'tipe_barang' => 'barang_dagang',
+            'satuan' => 'Pcs',
+            'stok_minimum' => 40,
+        ]);
+
+        $barang->gudangs()->attach($gudang1->id, ['stok' => 10, 'stok_minimum' => 30]);
+        $barang->gudangs()->attach($gudang2->id, ['stok' => 10, 'stok_minimum' => 10]);
+
+        $component = Livewire::test(EditBarang::class, ['record' => $barang->getRouteKey()])
+            ->set("data.stok_minimum_gudang_display.{$gudang1->id}", 50)
+            ->callAction(TestAction::make('samakan_ke_semua_gudang')->schemaComponent('section_gudang', 'form'));
+
+        $this->assertSame(50, (int) ($component->get("data.stok_minimum_gudang_display.{$gudang2->id}")));
+        $this->assertSame(100, (int) ($component->get('data.stok_minimum_display')));
+    }
+
+    public function test_create_barang_otomatis_menjumlahkan_stok_minimum_seluruh_gudang(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $gudang1 = Gudang::factory()->create(['nama_gudang' => 'Gudang Alpha']);
+        $gudang2 = Gudang::factory()->create(['nama_gudang' => 'Gudang Beta']);
+        $jenis = \App\Models\JenisBarang::create(['nama_jenis' => 'Makanan', 'kode_jenis' => 'MKN', 'deskripsi' => 'Makanan']);
+
+        Livewire::test(CreateBarang::class)
+            ->fillForm([
+                'nama_barang' => 'Keripik Tempe',
+                'jenis_barang_id' => $jenis->id,
+                'tipe_barang' => 'barang_dagang',
+                'satuan' => 'Bungkus',
+                'harga_beli' => 8000,
+                'harga_jual' => 12000,
+                'stok_minimum_gudang_display' => [
+                    $gudang1->id => 15,
+                    $gudang2->id => 25,
+                ],
+                'satuan_stok_minimum_gudang' => [
+                    $gudang1->id => 'Bungkus',
+                    $gudang2->id => 'Bungkus',
+                ],
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $barang = Barang::where('nama_barang', 'Keripik Tempe')->first();
+        $this->assertNotNull($barang);
+        // Total akumulasi global otomatis = 15 + 25 = 40
+        $this->assertSame(40, (int) $barang->stok_minimum);
+        $this->assertSame(15, (int) DB::table('barang_gudang')->where('barang_id', $barang->id)->where('gudang_id', $gudang1->id)->value('stok_minimum'));
+        $this->assertSame(25, (int) DB::table('barang_gudang')->where('barang_id', $barang->id)->where('gudang_id', $gudang2->id)->value('stok_minimum'));
     }
 }
 

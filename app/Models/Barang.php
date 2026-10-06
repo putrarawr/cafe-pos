@@ -22,6 +22,7 @@ class Barang extends Model
         'butuh_proses' => false,
         'is_default_kemasan' => false,
         'stok_minimum' => 20,
+        'stok_maksimum' => 0,
     ];
 
     public function getActivitylogOptions(): LogOptions
@@ -41,6 +42,7 @@ class Barang extends Model
                 'harga_jual',
                 'satuan',
                 'stok_minimum',
+                'stok_maksimum',
             ])
             ->logOnlyDirty()
             ->dontLogEmptyChanges();
@@ -53,6 +55,7 @@ class Barang extends Model
             'bisa_dijual' => 'boolean',
             'is_default_kemasan' => 'boolean',
             'stok_minimum' => 'integer',
+            'stok_maksimum' => 'integer',
         ];
     }
 
@@ -126,7 +129,7 @@ class Barang extends Model
     public function gudangs()
     {
         return $this->belongsToMany(Gudang::class, 'barang_gudang')
-            ->withPivot(['stok', 'stok_minimum'])
+            ->withPivot(['stok', 'stok_minimum', 'stok_maksimum'])
             ->withTimestamps();
     }
 
@@ -337,7 +340,8 @@ class Barang extends Model
 
     /**
      * Format jumlah stok dasar (misal Pcs) menjadi rincian satuan berantai.
-     * Contoh: 1255 pcs -> "1 Bal, 2 Slof, 5 Pack, 5 Pcs"
+     * Contoh: 1255 pcs -> "1 Bal, 2 Slof, 5 Pack, 5 Pcs (1.255 Pcs)"
+     * Jika hanya satuan terkecil: "25 Pcs"
      */
     public function formatStokBerantai(int $stok): string
     {
@@ -351,6 +355,7 @@ class Barang extends Model
 
         $sisa = $stok;
         $parts = [];
+        $hasHigherUnit = false;
 
         foreach ($units as $u) {
             $faktor = $u['faktor'];
@@ -358,13 +363,22 @@ class Barang extends Model
                 $qty = (int) floor($sisa / $faktor);
                 $sisa %= $faktor;
                 $parts[] = "{$qty} {$u['satuan']}";
+                $hasHigherUnit = true;
             } elseif ($faktor === 1 && ($sisa > 0 || empty($parts))) {
                 $parts[] = "{$sisa} {$u['satuan']}";
                 $sisa = 0;
             }
         }
 
-        return empty($parts) ? "0 {$baseSatuan}" : implode(', ', $parts);
+        $berantaiStr = empty($parts) ? "0 {$baseSatuan}" : implode(', ', $parts);
+
+        // Jika menggunakan satuan selain terkecil, selalu sertakan penjelasan berapa nilainya dalam satuan terkecil
+        if ($hasHigherUnit) {
+            $formattedBase = number_format($stok, 0, ',', '.');
+            return "{$berantaiStr} ({$formattedBase} {$baseSatuan})";
+        }
+
+        return $berantaiStr;
     }
 
     public function historiHpps(): \Illuminate\Database\Eloquent\Relations\HasMany

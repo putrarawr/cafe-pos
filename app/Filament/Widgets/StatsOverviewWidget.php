@@ -56,18 +56,11 @@ class StatsOverviewWidget extends BaseWidget
         // Pembelian Bulan Ini
         $totalBeliBulanIni = Pembelian::whereBetween('tanggal', [$startOfMonth, $endOfMonth])->sum('neto');
 
-        // Total Barang Unik dengan Stok Menipis (Dynamic Low Stock: Total Toko <= Global ATAU Stok Gudang <= Batas Gudang)
+        // Total Barang Unik dengan Stok Menipis Global (Alarm Belanja Supplier: Total Toko <= Global stok_minimum)
         $lowStockCount = Barang::query()
             ->where('tipe_barang', '!=', 'barang_jadi')
-            ->where(function ($query) {
-                $query->where(function ($q) {
-                    $q->where('barang.stok_minimum', '>', 0)
-                        ->whereRaw('(SELECT COALESCE(SUM(stok), 0) FROM barang_gudang WHERE barang_gudang.barang_id = barang.id) <= barang.stok_minimum');
-                })->orWhereHas('gudangs', function ($q) {
-                    $q->where('barang_gudang.stok_minimum', '>', 0)
-                        ->whereColumn('barang_gudang.stok', '<=', 'barang_gudang.stok_minimum');
-                });
-            })
+            ->where('barang.stok_minimum', '>', 0)
+            ->whereRaw('(SELECT COALESCE(SUM(stok), 0) FROM barang_gudang WHERE barang_gudang.barang_id = barang.id) <= barang.stok_minimum')
             ->count();
 
         // Trend 7 hari terakhir untuk sparkline animasi
@@ -99,7 +92,7 @@ class StatsOverviewWidget extends BaseWidget
                 ->color('warning'),
 
             Stat::make('Stok Menipis', $this->formatItemCount($lowStockCount))
-                ->description($lowStockCount > 0 ? 'Klik untuk lihat rincian' : 'Semua stok aman')
+                ->description($lowStockCount > 0 ? 'Alarm belanja: klik untuk rincian' : 'Semua stok toko aman')
                 ->descriptionIcon(Heroicon::OutlinedExclamationTriangle)
                 ->color($lowStockCount > 0 ? 'danger' : 'gray')
                 ->extraAttributes($lowStockCount > 0 ? [
