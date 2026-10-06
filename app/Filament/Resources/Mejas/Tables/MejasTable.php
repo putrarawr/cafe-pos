@@ -51,13 +51,14 @@ class MejasTable
                     ->label('Durasi')
                     ->suffix(' menit'),
 
+                // Status berasal dari relasi sesiAktif, bukan kolom di tabel meja,
+                // jadi tidak bisa di-sort lewat SQL.
                 TextColumn::make('sesi_aktif')
                     ->label('Status')
                     ->badge()
                     ->formatStateUsing(fn (?string $state) => $state ? 'TERISI' : 'Tersedia')
                     ->color(fn (?string $state) => $state === 'terisi' ? 'danger' : 'success')
-                    ->state(fn ($record) => $record->sesiAktif?->status)
-                    ->sortable(),
+                    ->state(fn ($record) => $record->sesiAktif?->status),
 
                 IconColumn::make('status_aktif')
                     ->label('Aktif')
