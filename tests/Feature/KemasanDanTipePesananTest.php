@@ -9,11 +9,12 @@ use App\Models\JenisBarang;
 use App\Models\Penjualan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class KemasanDanTipePesananTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     public function test_kemasan_default_scope_and_single_default_guarantee()
     {

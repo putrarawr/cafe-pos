@@ -10,9 +10,11 @@ use App\Models\Gudang;
 use App\Models\JenisBarang;
 use App\Models\KartuStok;
 use App\Models\Karyawan;
+use App\Models\Meja;
 use App\Models\OrderPending;
 use App\Models\Penjualan;
 use App\Models\PromoBonus;
+use App\Models\SesiMeja;
 use App\Models\User;
 use App\Services\StokService;
 use Illuminate\Http\Request;
@@ -423,7 +425,7 @@ class KasirController extends Controller
             }
         };
 
-        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user', 'aplikator'])
+        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user', 'aplikator', 'meja'])
             ->whereDate('tanggal', $tanggal)
             ->when($before !== null && (int) $before > 0, fn($q) => $q->where('id', '<', (int) $before))
             ->where($scope)
@@ -460,7 +462,7 @@ class KasirController extends Controller
             return response()->json(['message' => 'Password salah! Silakan coba lagi.'], 422);
         }
 
-        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user', 'aplikator'])
+        $penjualan = Penjualan::with(['details.barang', 'gudang', 'karyawan', 'user', 'aplikator', 'meja'])
             ->find($id);
 
         if (!$penjualan) {
@@ -492,6 +494,10 @@ class KasirController extends Controller
             'biaya_kirim' => (int) $p->biaya_kirim,
             'aplikator_id' => $p->aplikator_id ? (int) $p->aplikator_id : null,
             'aplikator' => $p->aplikator?->nama_aplikator ?? null,
+            'meja_id' => $p->meja_id ? (int) $p->meja_id : null,
+            'meja' => $p->meja?->kode_meja ?? null,
+            'meja_nama' => $p->meja?->nama_meja ?? null,
+            'durasi_meja_menit' => $p->durasi_meja_menit !== null ? (int) $p->durasi_meja_menit : null,
             'jenis_pembayaran' => $p->jenis_pembayaran,
             'bayar' => (int) $p->bayar,
             'kembalian' => (int) $p->kembalian,
@@ -533,6 +539,8 @@ class KasirController extends Controller
             'alamat_pengiriman' => ['nullable', 'string'],
             'biaya_kirim' => ['nullable', 'integer', 'min:0'],
             'aplikator_id' => ['nullable', 'integer', 'exists:aplikator,id'],
+            // meja hanya bermakna untuk dine_in; keabsahan & ketersediaannya dicek terpisah
+            'meja_id' => ['nullable', 'integer', 'exists:meja,id'],
             'details' => ['required', 'array', 'min:1'],
             'details.*.barang_id' => ['required', 'integer', 'exists:barang,id'],
             'details.*.jumlah' => ['required', 'integer', 'min:1'],
@@ -645,6 +653,222 @@ class KasirController extends Controller
         return [$bonusPool, $promos, $promoByMainBarang];
     }
 
+    // =====================================================================
+    // MEJA
+    //
+    // Meja hanya relevan untuk pesanan dine_in. Setiap pemakaian meja dicatat
+    // sebagai satu baris `sesi_meja`; selama statusnya 'terisi' meja terkunci
+    // dan tidak bisa dipilih kasir lain. Meja bebas kembali begitu order
+    // dibayar atau order pending dibatalkan.
+    // =====================================================================
+
+    /**
+     * Apakah keranjang punya minimal satu item yang makan di tempat.
+     * Default server untuk jenis_pesanan yang tidak dikirim juga dine_in,
+     * jadi cek di sini memakai nilai default yang sama.
+     *
+     * @param  array<int, array<string, mixed>>  $details
+     */
+    private function adaItemDineIn(array $details): bool
+    {
+        return collect($details)->contains(
+            fn ($d) => ($d['jenis_pesanan'] ?? 'dine_in') === 'dine_in'
+        );
+    }
+
+    /**
+     * Validasi meja dari sisi request: wajib ada kalau ada item dine_in, harus
+     * milik gudang transaksi, aktif, dan belum terisi sesi aktif.
+     *
+     * $sesiDi-exempt dipakai saat menyelesaikan order pending: sesi meja milik
+     * order itu sendiri tidak dianggap bentrok.
+     */
+    private function validasiMeja(array $data, int $gudangId, bool $hasDineIn, ?int $orderPendingId = null): ?int
+    {
+        $mejaId = ! empty($data['meja_id']) ? (int) $data['meja_id'] : null;
+
+        // Tidak ada item dine_in: meja tidak relevan, buang supaya tidak bocor ke nota.
+        if (! $hasDineIn) {
+            return null;
+        }
+
+        if ($mejaId === null) {
+            $this->tolak('Pilih meja dulu untuk pesanan dine in.');
+        }
+
+        $meja = Meja::find($mejaId);
+        if (! $meja) {
+            $this->tolak('Meja tidak ditemukan.');
+        }
+
+        if ((int) $meja->gudang_id !== $gudangId) {
+            $this->tolak('Meja ini dari gudang lain.');
+        }
+
+        if (! $meja->status_aktif) {
+            $this->tolak("{$meja->kode_meja} sedang tidak aktif, pilih meja lain.");
+        }
+
+        // Sesi aktif lain di meja yang sama = meja sudah di-order kasir lain.
+        $sesiBentrok = SesiMeja::where('meja_id', $meja->id)
+            ->where('status', SesiMeja::STATUS_TERISI)
+            ->when(
+                $orderPendingId !== null,
+                fn ($q) => $q->where(fn ($q2) => $q2->whereNull('order_pending_id')->orWhere('order_pending_id', '!=', $orderPendingId))
+            )
+            ->lockForUpdate()
+            ->first();
+
+        if ($sesiBentrok) {
+            $this->tolak("{$meja->kode_meja} sedang dipakai, pilih meja lain.");
+        }
+
+        return $meja->id;
+    }
+
+    /**
+     * Buka sesi meja baru (meja jadi terkunci). WAJIB dipanggil di dalam transaksi
+     * DB, setelah baris meja di-lock, supaya dua kasir tidak bisa sama-sama membuka
+     * sesi untuk satu meja.
+     */
+    private function bukaSesiMeja(int $mejaId, int $gudangId, ?int $orderPendingId = null): SesiMeja
+    {
+        $meja = Meja::lockForUpdate()->findOrFail($mejaId);
+
+        return SesiMeja::create([
+            'meja_id' => $meja->id,
+            'gudang_id' => $gudangId,
+            'karyawan_id' => Auth::guard('karyawan')->check() ? Auth::guard('karyawan')->id() : null,
+            'user_id' => Auth::guard('web')->check() ? Auth::guard('web')->id() : null,
+            'status' => SesiMeja::STATUS_TERISI,
+            'mulai' => now(),
+            // snapshot, jadi mengubah durasi master tidak mengubah sesi berjalan
+            'batas_menit' => max(1, (int) $meja->durasi_menit),
+            'order_pending_id' => $orderPendingId,
+        ]);
+    }
+
+    /**
+     * Tutup sesi meja yang sedang terisi sehingga meja itu bebas lagi.
+     * Sesi yang sudah di-lock dipakai untuk membaca status terbaru.
+     */
+    private function tutupSesiMeja(?SesiMeja $sesi, string $status, ?int $penjualanId = null): void
+    {
+        if (! $sesi || $sesi->status !== SesiMeja::STATUS_TERISI) {
+            return;
+        }
+
+        $sesi->tutup($status, $penjualanId);
+        $sesi->save();
+    }
+
+    /**
+     * Ambil sesi meja terisi milik satu order pending (kalau ada).
+     */
+    private function sesiMejaOrderPending(?int $orderPendingId): ?SesiMeja
+    {
+        if ($orderPendingId === null) {
+            return null;
+        }
+
+        return SesiMeja::where('order_pending_id', $orderPendingId)
+            ->where('status', SesiMeja::STATUS_TERISI)
+            ->lockForUpdate()
+            ->first();
+    }
+
+    /**
+     * Daftar meja + status real-time untuk dashboard pilih meja.
+     */
+    public function daftarMeja(Request $request)
+    {
+        $gudangId = (int) $request->query('gudang_id', 0);
+        if ($gudangId <= 0) {
+            $this->tolak('Pilih gudang dulu.');
+        }
+
+        if (! Gudang::whereKey($gudangId)->exists()) {
+            $this->tolak('Gudang tidak ditemukan.');
+        }
+
+        $mejas = Meja::where('gudang_id', $gudangId)
+            ->with(['sesiAktif.orderPending', 'sesiAktif.penjualan', 'sesiAktif.karyawan', 'sesiAktif.user'])
+            ->orderBy('kode_meja')
+            ->get();
+
+        return response()->json([
+            'gudang_id' => $gudangId,
+            'items' => $mejas->map(function (Meja $meja) {
+                $sesi = $meja->sesiAktif;
+                $over = $sesi ? $sesi->sudahOver() : false;
+
+                return [
+                    'id' => (int) $meja->id,
+                    'kode_meja' => $meja->kode_meja,
+                    'nama_meja' => $meja->nama_meja,
+                    'area' => $meja->area,
+                    'kapasitas' => (int) $meja->kapasitas,
+                    'durasi_menit' => (int) $meja->durasi_menit,
+                    'status_aktif' => (bool) $meja->status_aktif,
+                    'status' => ! $meja->status_aktif
+                        ? 'tidak_aktif'
+                        : ($sesi ? ($over ? 'overstay' : 'terisi') : 'tersedia'),
+                    'sesi_id' => $sesi?->id,
+                    'mulai' => $sesi?->mulai?->toIso8601String(),
+                    'lama_menit' => $sesi ? $sesi->lamaMenit() : 0,
+                    'sisa_menit' => $sesi ? $sesi->sisaMenit() : (int) $meja->durasi_menit,
+                    'overstay' => $over,
+                    'order_pending_id' => $sesi?->order_pending_id,
+                    'kode_order' => $sesi?->orderPending?->kode_order,
+                    'nomer_nota' => $sesi?->penjualan?->nomer_nota,
+                    'total' => (int) ($sesi?->orderPending?->total ?? $sesi?->penjualan?->neto ?? 0),
+                    'nama_kasir' => $sesi
+                        ? ($sesi->karyawan?->nama_karyawan ?? $sesi->user?->name ?? '-')
+                        : null,
+                ];
+            })->all(),
+        ]);
+    }
+
+    /**
+     * Lepas meja yang masih terkunci. Jalur keluar manual untuk sesi nyangkut,
+     * misalnya kasirnya sudah pulang shift tanpa sempat menutup order.
+     */
+    public function lepasMeja($id)
+    {
+        $sesi = DB::transaction(function () use ($id) {
+            $sesi = SesiMeja::whereKey($id)->lockForUpdate()->first();
+
+            if (! $sesi) {
+                abort(404, 'Sesi meja tidak ditemukan.');
+            }
+
+            if ($sesi->status !== SesiMeja::STATUS_TERISI) {
+                $this->tolak('Meja ini sudah tidak terkunci.');
+            }
+
+            // Kalau masih ada order pending yang menahan, sesi tidak bisa dilepas
+            // diam-diam: order itu harus dibatalkan supaya reservasi ikut lepas.
+            if ($sesi->order_pending_id) {
+                $order = OrderPending::whereKey($sesi->order_pending_id)->lockForUpdate()->first();
+                if ($order && $order->status === OrderPending::STATUS_PENDING) {
+                    $this->tolak('Masih ada order pending di meja ini. Batalkan ordernya dulu.');
+                }
+            }
+
+            $sesi->tutup(SesiMeja::STATUS_SELESAI);
+            $sesi->save();
+
+            return $sesi;
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$sesi->meja->kode_meja} sudah dilepas.",
+            'sesi' => ['id' => (int) $sesi->id, 'durasi_menit_terpakai' => (int) $sesi->durasi_menit_terpakai],
+        ]);
+    }
+
     /**
      * Simpan transaksi kasir.
      * Alurnya ngikutin pola CreatePembelian::afterCreate() punya admin Filament,
@@ -689,6 +913,11 @@ class KasirController extends Controller
         $biayaKirimFinal = $hasAntar ? (int) ($data['biaya_kirim'] ?? 0) : 0;
         $alamatPengirimanFinal = $hasAntar ? ($data['alamat_pengiriman'] ?? null) : null;
 
+        // ===== Meja WAJIB dipilih bila ada item dine_in, dan tidak boleh dipakai
+        // kalau tidak ada dine_in sama sekali (take away / delivery) =====
+        $hasDineIn = $this->adaItemDineIn($data['details']);
+        $mejaIdFinal = $this->validasiMeja($data, (int) $gudangId, $hasDineIn, $orderPending?->id);
+
         // ===== Bulk-fetch semua Barang yang dibutuhkan dalam 1 query =====
         $allBarangIds = array_unique(array_column($data['details'], 'barang_id'));
         $barangs = Barang::whereIn('id', $allBarangIds)->get()->keyBy('id');
@@ -709,9 +938,10 @@ class KasirController extends Controller
             $promos,
             $promoByMainBarang,
             $orderPending?->id,
+            $mejaIdFinal,
         ));
 
-        return response()->json($penjualan->load('details.barang'));
+        return response()->json($penjualan->load('details.barang')->load('meja'));
     }
 
     // =====================================================================
@@ -748,6 +978,10 @@ class KasirController extends Controller
         $biayaKirimFinal = $hasAntar ? (int) ($data['biaya_kirim'] ?? 0) : 0;
         $alamatPengirimanFinal = $hasAntar ? ($data['alamat_pengiriman'] ?? null) : null;
 
+        // Order pending = pelanggan sudah duduk di meja, jadi meja ikut terkunci.
+        $hasDineIn = $this->adaItemDineIn($data['details']);
+        $mejaIdFinal = $this->validasiMeja($data, $gudangId, $hasDineIn);
+
         $allBarangIds = array_unique(array_column($data['details'], 'barang_id'));
         $barangs = Barang::whereIn('id', $allBarangIds)->get()->keyBy('id');
 
@@ -766,10 +1000,11 @@ class KasirController extends Controller
             $alamatPengirimanFinal,
             $bonusPool,
             $promos,
-            $promoByMainBarang
+            $promoByMainBarang,
+            $mejaIdFinal
         ));
 
-        return response()->json($order->load('items.barang'), 201);
+        return response()->json($order->load(['items.barang', 'meja']), 201);
     }
 
     /**
@@ -782,7 +1017,7 @@ class KasirController extends Controller
 
         $query = OrderPending::query()
             ->where('status', OrderPending::STATUS_PENDING)
-            ->with(['gudang', 'karyawan', 'user', 'items.barang'])
+            ->with(['gudang', 'karyawan', 'user', 'meja', 'sesiMeja', 'items.barang'])
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 
@@ -793,26 +1028,35 @@ class KasirController extends Controller
         $orders = $query->limit($limit)->get();
 
         return response()->json([
-            'items' => $orders->map(fn(OrderPending $o) => [
-                'id' => $o->id,
-                'kode_order' => $o->kode_order,
-                'gudang_id' => (int) $o->gudang_id,
-                'nama_gudang' => $o->gudang?->nama_gudang ?? '-',
-                'nama_kasir' => $o->nama_kasir,
-                'total' => (int) $o->total,
-                'diskon' => (int) $o->diskon,
-                'neto' => (int) $o->neto,
-                'jumlah_item' => (int) $o->items->sum('jumlah'),
-                'jumlah_baris' => $o->items->count(),
-                'created_at' => $o->created_at?->toIso8601String(),
-                'items' => $o->items->map(fn($it) => [
-                    'barang_id' => (int) $it->barang_id,
-                    'nama_barang' => $it->barang?->nama_barang ?? '-',
-                    'jumlah' => (int) $it->jumlah,
-                    'satuan' => $it->satuan,
-                    'jenis_pesanan' => $it->jenis_pesanan,
-                ])->all(),
-            ])->all(),
+            'items' => $orders->map(function (OrderPending $o) {
+                $sesi = $o->sesiMeja;
+
+                return [
+                    'id' => $o->id,
+                    'kode_order' => $o->kode_order,
+                    'gudang_id' => (int) $o->gudang_id,
+                    'nama_gudang' => $o->gudang?->nama_gudang ?? '-',
+                    'nama_kasir' => $o->nama_kasir,
+                    'meja_id' => $o->meja_id ? (int) $o->meja_id : null,
+                    'meja_kode' => $o->meja?->kode_meja,
+                    'meja_nama' => $o->meja?->nama_meja,
+                    'sisa_menit' => $sesi ? $sesi->sisaMenit() : null,
+                    'overstay' => $sesi ? $sesi->sudahOver() : false,
+                    'total' => (int) $o->total,
+                    'diskon' => (int) $o->diskon,
+                    'neto' => (int) $o->neto,
+                    'jumlah_item' => (int) $o->items->sum('jumlah'),
+                    'jumlah_baris' => $o->items->count(),
+                    'created_at' => $o->created_at?->toIso8601String(),
+                    'items' => $o->items->map(fn($it) => [
+                        'barang_id' => (int) $it->barang_id,
+                        'nama_barang' => $it->barang?->nama_barang ?? '-',
+                        'jumlah' => (int) $it->jumlah,
+                        'satuan' => $it->satuan,
+                        'jenis_pesanan' => $it->jenis_pesanan,
+                    ])->all(),
+                ];
+            })->all(),
         ]);
     }
 
@@ -825,7 +1069,7 @@ class KasirController extends Controller
      */
     public function detailOrderPending($id)
     {
-        $order = OrderPending::with(['gudang', 'aplikator', 'items.barang'])
+        $order = OrderPending::with(['gudang', 'aplikator', 'meja', 'items.barang'])
             ->find($id);
 
         if (!$order) {
@@ -851,6 +1095,9 @@ class KasirController extends Controller
             'biaya_kirim' => (int) $order->biaya_kirim,
             'alamat_pengiriman' => $order->alamat_pengiriman,
             'aplikator_id' => $order->aplikator_id ? (int) $order->aplikator_id : null,
+            // frontend perlu ini supaya meja ikut ke-restore saat order dilanjutkan
+            'meja_id' => $order->meja_id ? (int) $order->meja_id : null,
+            'meja_kode' => $order->meja?->kode_meja,
             'catatan' => $order->catatan,
             'items' => $order->items->map(fn($it) => [
                 'barang_id' => (int) $it->barang_id,
@@ -884,6 +1131,9 @@ class KasirController extends Controller
                 'updated_at' => now(),
             ]);
 
+            // Pelanggan pergi tanpa bayar → mekanya juga harus dibebaskan.
+            $this->tutupSesiMeja($this->sesiMejaOrderPending((int) $order->id), SesiMeja::STATUS_BATAL);
+
             return $order;
         });
 
@@ -909,7 +1159,8 @@ class KasirController extends Controller
         ?string $alamatPengirimanFinal,
         array &$bonusPool,
         Collection $promos,
-        array $promoByMainBarang
+        array $promoByMainBarang,
+        ?int $mejaIdFinal = null
     ): OrderPending {
         // Hitung harga, tier, dan cek bonus promo persis seperti transaksi.
         [$total, $details] = $this->kalkulasiItemPenjualan(
@@ -939,7 +1190,13 @@ class KasirController extends Controller
             'biaya_kirim' => $biayaKirimFinal,
             'alamat_pengiriman' => $alamatPengirimanFinal,
             'aplikator_id' => $hasDelivery && !empty($data['aplikator_id']) ? (int) $data['aplikator_id'] : null,
+            'meja_id' => $mejaIdFinal,
         ]);
+
+        // Pelanggan sudah duduk, jadi kunci mejanya selama order ini ditahan.
+        if ($mejaIdFinal !== null) {
+            $this->bukaSesiMeja($mejaIdFinal, $gudangId, $order->id);
+        }
 
         $rows = [];
         foreach ($details as $d) {
@@ -1015,7 +1272,8 @@ class KasirController extends Controller
         array &$bonusPool,
         Collection $promos,
         array $promoByMainBarang,
-        ?int $orderPendingId = null
+        ?int $orderPendingId = null,
+        ?int $mejaIdFinal = null
     ): Penjualan {
         $aplikatorId = !empty($data['aplikator_id']) ? (int) $data['aplikator_id'] : null;
 
@@ -1035,6 +1293,13 @@ class KasirController extends Controller
             }
         }
 
+        // Bayar = pelanggan selesai, jadi meja yang dipegang order pending itu
+        // ditutup di sini dan mekanya langsung bisa dipilih kasir lain.
+        $sesiMejaDitutup = null;
+        if ($orderPendingId) {
+            $sesiMejaDitutup = $this->sesiMejaOrderPending($orderPendingId);
+        }
+
         [$total, $details] = $this->kalkulasiItemPenjualan(
             $data['details'],
             $barangs,
@@ -1045,6 +1310,8 @@ class KasirController extends Controller
             $orderPendingId
         );
 
+        $durasiMejaMenit = $sesiMejaDitutup?->lamaMenit();
+
         $penjualan = $this->buatPenjualan(
             $data,
             $gudangId,
@@ -1052,7 +1319,9 @@ class KasirController extends Controller
             $biayaKirimFinal,
             $alamatPengirimanFinal,
             $hasDelivery,
-            $aplikatorId
+            $aplikatorId,
+            $mejaIdFinal,
+            $durasiMejaMenit
         );
 
         $this->simpanDetailJual($penjualan->id, $gudangId, $details, $promos, $promoByMainBarang);
@@ -1068,6 +1337,12 @@ class KasirController extends Controller
                 'updated_at' => now(),
             ]);
         }
+
+        // Sesi meja dari order pending yang barusan dibayar → selesai.
+        $this->tutupSesiMeja($sesiMejaDitutup, SesiMeja::STATUS_SELESAI, $penjualan->id);
+
+        // Bayar langsung tanpa pernah ditahan: tidak ada sesi yang perlu dibuka,
+        // meja dianggap bebas begitu pelanggan selesai di kasir.
 
         return $penjualan;
     }
@@ -1209,7 +1484,9 @@ class KasirController extends Controller
         int $biayaKirimFinal,
         ?string $alamatPengirimanFinal,
         bool $hasDelivery,
-        ?int $aplikatorId
+        ?int $aplikatorId,
+        ?int $mejaIdFinal = null,
+        ?int $durasiMejaMenit = null
     ): Penjualan {
         $diskonNominal = (int) floor($total * (int) ($data['diskon_persen'] ?? 0) / 100);
         $neto = max(0, $total - $diskonNominal);
@@ -1256,6 +1533,8 @@ class KasirController extends Controller
             'biaya_kirim' => $biayaKirimFinal,
             'aplikator_id' => $hasDelivery ? $aplikatorId : null,
             'komisi_aplikator' => $komisiAplikator,
+            'meja_id' => $mejaIdFinal,
+            'durasi_meja_menit' => $mejaIdFinal !== null ? $durasiMejaMenit : null,
         ]);
     }
 

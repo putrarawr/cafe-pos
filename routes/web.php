@@ -25,5 +25,9 @@ Route::middleware('auth:karyawan,web')->group(function () {
     Route::post('/kasir/order-pending', [KasirController::class, 'simpanOrderPending'])->name('kasir.order-pending.simpan');
     Route::get('/kasir/order-pending/{id}', [KasirController::class, 'detailOrderPending'])->name('kasir.order-pending.detail');
     Route::post('/kasir/order-pending/{id}/batal', [KasirController::class, 'batalkanOrderPending'])->name('kasir.order-pending.batal');
+
+    // --- Meja (dashboard pilih meja dine in) ---
+    Route::get('/kasir/meja', [KasirController::class, 'daftarMeja'])->name('kasir.meja.index');
+    Route::post('/kasir/meja/{id}/lepas', [KasirController::class, 'lepasMeja'])->name('kasir.meja.lepas');
 });
 

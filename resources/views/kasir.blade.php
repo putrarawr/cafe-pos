@@ -177,6 +177,18 @@
                     </span>
                     <span class="text-xs font-semibold leading-none">Order</span>
                 </button>
+
+                <button id="btn-daftar-meja" type="button" title="Lihat status meja dan pilih meja dine in" aria-label="Lihat status meja dan pilih meja dine in"
+                    class="relative w-full flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                    <span class="relative shrink-0">
+                        <svg class="w-6 h-6 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2 20h20"/><path d="M4 20V10"/><path d="M20 20V10"/><path d="M12 4v16"/><path d="M2 10h20"/>
+                        </svg>
+                        <span data-badge-meja
+                            class="hidden absolute -top-1.5 -right-2 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums border-2 border-white"></span>
+                    </span>
+                    <span class="text-xs font-semibold leading-none">Meja</span>
+                </button>
             </div>
 
             <div class="flex-1"></div>
@@ -232,6 +244,14 @@
                                 </svg>
                                 <span data-badge-order-pending
                                     class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums border-2 border-white"></span>
+                            </button>
+                            <button id="btn-daftar-meja-mobile" type="button" title="Status & pilih meja" aria-label="Status dan pilih meja"
+                                class="relative w-9 h-9 flex items-center justify-center rounded-xl border border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-400 hover:bg-zinc-50 transition-all duration-200 cursor-pointer">
+                                <svg class="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M2 20h20"/><path d="M4 20V10"/><path d="M20 20V10"/><path d="M12 4v16"/><path d="M2 10h20"/>
+                                </svg>
+                                <span data-badge-meja
+                                    class="hidden absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums border-2 border-white"></span>
                             </button>
                             <form method="POST" action="{{ route('kasir.logout') }}">
                                 @csrf
@@ -817,6 +837,60 @@
             <div class="px-6 py-4 border-t border-zinc-100">
                 <button id="btn-tutup-order-pending-bawah" type="button"
                     class="w-full border border-zinc-200 hover:border-zinc-900 active:scale-[0.99] text-zinc-700 font-bold rounded-xl py-3 text-sm transition-colors cursor-pointer">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- MODAL DASHBOARD MEJA: pilih meja dine in, dibuka otomatis sebelum bayar / order --}}
+    <div id="modal-dashboard-meja" role="dialog" aria-modal="true" aria-label="Pilih meja"
+        class="hidden anim-backdrop fixed inset-0 bg-zinc-950/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div class="anim-scale-in bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88dvh]">
+
+            {{-- Header + legenda warna --}}
+            <div class="shrink-0 px-6 py-4 border-b border-zinc-100">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <h3 class="text-base font-bold tracking-tight text-zinc-900">Pilih Meja</h3>
+                        <p class="text-[11px] text-zinc-500 mt-0.5">Khusus pesanan <span class="font-bold">Dine in</span>. Meja yang hijau masih kosong dan bisa dipilih.</p>
+                    </div>
+                    <button id="btn-tutup-dashboard-meja" type="button" aria-label="Tutup"
+                        class="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+                            <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3">
+                    <span class="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-600">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Tersedia
+                    </span>
+                    <span class="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-600">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-300"></span> Terisi
+                    </span>
+                    <span class="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-600">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-600"></span> Overstay (lewat durasi)
+                    </span>
+                    <span class="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-600">
+                        <span class="w-2.5 h-2.5 rounded-full bg-zinc-300"></span> Tidak aktif
+                    </span>
+                    <span id="meja-ringkas" class="ml-auto text-[10px] font-bold text-zinc-400 tabular-nums"></span>
+                </div>
+            </div>
+
+            {{-- Loading --}}
+            <div id="meja-loading" class="px-4 py-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                @for ($i = 0; $i < 8; $i++)
+                    <div class="h-[104px] rounded-2xl bg-zinc-100 animate-pulse"></div>
+                @endfor
+            </div>
+
+            {{-- Grid meja (di-render JS) --}}
+            <div id="meja-grid" class="hidden flex-1 overflow-y-auto px-4 py-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 content-start"></div>
+
+            <div class="shrink-0 px-6 py-4 border-t border-zinc-100">
+                <button id="btn-tutup-dashboard-meja-bawah" type="button"
+                    class="w-full border border-zinc-200 hover:border-zinc-900 active:scale-[0.99] text-zinc-700 font-bold rounded-xl py-3 text-sm transition-colors cursor-pointer">Batal</button>
             </div>
         </div>
     </div>

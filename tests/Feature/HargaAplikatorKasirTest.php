@@ -9,11 +9,12 @@ use App\Models\Gudang;
 use App\Models\JenisBarang;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class HargaAplikatorKasirTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     protected function setUp(): void
     {
@@ -177,7 +178,7 @@ class HargaAplikatorKasirTest extends TestCase
         $master = $this->seedMasterData();
 
         // Tanpa aplikator_id → komisi_aplikator null
-        $this->postJson('/kasir/simpan', [
+        $this->postJson('/kasir/simpan', $this->denganMeja([
             'gudang_id' => $master['gudang']->id,
             'tanggal' => now()->toDateString(),
             'diskon' => 0,
@@ -185,7 +186,7 @@ class HargaAplikatorKasirTest extends TestCase
             'bayar' => 100000,
             'aplikator_id' => null,
             'details' => [['barang_id' => $master['barang']->id, 'jumlah' => 1, 'diskon' => 0, 'satuan' => 'Pcs', 'jenis_pesanan' => 'dine_in']],
-        ])->assertOk();
+        ]))->assertOk();
 
         $this->assertNull(\App\Models\Penjualan::first()->komisi_aplikator);
     }

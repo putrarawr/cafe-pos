@@ -368,3 +368,104 @@ export async function batalkanOrderPending(id) {
 
     return postJson(`${ORDER_PENDING_URL}/${id}/batal`, {});
 }
+
+// =====================================================================
+// MEJA
+// ---------------------------------------------------------------------
+// Meja cuma dipakai untuk pesanan dine in. Setiap pemakaian meja dicatat
+// server sebagai "sesi"; selama sesinya masih aktif mejanya terkunci dan
+// ditandai merah di dashboard.
+// =====================================================================
+
+const MEJA_URL = '/kasir/meja';
+
+// Meja buat mode mock. `sesi` = null kalau sedang tersedia.
+const mockMeja = [
+    { id: 1, kode_meja: 'Meja 01', nama_meja: 'Indoor', area: 'Indoor', kapasitas: 4, durasi_menit: 60, status_aktif: true, sesi: null },
+    { id: 2, kode_meja: 'Meja 02', nama_meja: 'Indoor', area: 'Indoor', kapasitas: 4, durasi_menit: 60, status_aktif: true, sesi: null },
+    { id: 3, kode_meja: 'Meja 03', nama_meja: 'Indoor', area: 'Indoor', kapasitas: 6, durasi_menit: 60, status_aktif: true, sesi: null },
+    { id: 4, kode_meja: 'Meja 04', nama_meja: 'Indoor', area: 'Indoor', kapasitas: 4, durasi_menit: 60, status_aktif: true, sesi: null },
+    { id: 5, kode_meja: 'Meja 05', nama_meja: 'Teras', area: 'Teras', kapasitas: 4, durasi_menit: 45, status_aktif: true, sesi: null },
+    { id: 6, kode_meja: 'Meja 06', nama_meja: 'Teras', area: 'Teras', kapasitas: 4, durasi_menit: 45, status_aktif: true, sesi: null },
+    { id: 7, kode_meja: 'Meja 07', nama_meja: 'VIP', area: 'VIP', kapasitas: 6, durasi_menit: 90, status_aktif: true, sesi: null },
+    { id: 8, kode_meja: 'Meja 08', nama_meja: 'VIP', area: 'VIP', kapasitas: 8, durasi_menit: 120, status_aktif: false, sesi: null },
+];
+
+function mockMejaTerlihat(gudangId) {
+    return mockMeja.map((m) => {
+        if (!m.sesi) {
+            return {
+                ...m,
+                status: m.status_aktif ? 'tersedia' : 'tidak_aktif',
+                sesi_id: null,
+                lama_menit: 0,
+                sisa_menit: m.durasi_menit,
+                overstay: false,
+                order_pending_id: null,
+                kode_order: null,
+                nomer_nota: null,
+                total: 0,
+                nama_kasir: null,
+            };
+        }
+        const lama = Math.floor((Date.now() - m.sesi.mulai) / 60000);
+        const sisa = Math.max(0, m.durasi_menit - lama);
+        return {
+            ...m,
+            status: sisa === 0 ? 'overstay' : 'terisi',
+            sesi_id: m.sesi.id,
+            mulai: new Date(m.sesi.mulai).toISOString(),
+            lama_menit: lama,
+            sisa_menit: sisa,
+            overstay: sisa === 0,
+            order_pending_id: m.sesi.order_pending_id ?? null,
+            kode_order: m.sesi.kode_order ?? null,
+            nomer_nota: m.sesi.nomer_nota ?? null,
+            total: m.sesi.total ?? 0,
+            nama_kasir: m.sesi.nama_kasir ?? null,
+        };
+    });
+}
+
+/**
+ * Daftar meja + status real-time → GET /kasir/meja.
+ *
+ * Server yang menentukan meja mana yang terkunci, jadi browser tidak pernah
+ * memutuskan sendiri apakah sebuah meja boleh dipilih.
+ */
+export async function getMeja(gudangId) {
+    if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 200));
+        return { gudang_id: gudangId, items: mockMejaTerlihat(gudangId) };
+    }
+
+    const params = new URLSearchParams();
+    if (gudangId != null) params.set('gudang_id', gudangId);
+
+    const res = await fetch(`${MEJA_URL}${params.toString() ? `?${params}` : ''}`, {
+        headers: { Accept: 'application/json' },
+    });
+
+    if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.message ?? `Gagal memuat daftar meja (${res.status})`);
+    }
+    return res.json();
+}
+
+/**
+ * Lepas meja yang masih terkunci → POST /kasir/meja/{sesiId}/lepas.
+ * Jalur keluar manual kalau ada sesi nyangkut.
+ */
+export async function lepasMeja(sesiId) {
+    if (USE_MOCK) {
+        await new Promise((r) => setTimeout(r, 200));
+        const meja = mockMeja.find((m) => m.sesi?.id === Number(sesiId));
+        if (!meja) throw new Error('Meja ini sudah tidak terkunci.');
+        meja.sesi = null;
+        return { success: true, message: `${meja.kode_meja} sudah dilepas.` };
+    }
+
+    return postJson(`${MEJA_URL}/${sesiId}/lepas`, {});
+}
+

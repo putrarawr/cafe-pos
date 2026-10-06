@@ -9,11 +9,12 @@ use App\Models\JenisBarang;
 use App\Models\Penjualan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class PilihanAplikatorDeliveryTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     private function setupKafe(): array
     {
@@ -146,7 +147,7 @@ class PilihanAplikatorDeliveryTest extends TestCase
     {
         [$user, $gudang, $kopi] = $this->setupKafe();
 
-        $payload = [
+        $payload = $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => now()->toDateString(),
             'diskon' => 0,
@@ -162,7 +163,7 @@ class PilihanAplikatorDeliveryTest extends TestCase
                     'jenis_pesanan' => 'dine_in',
                 ],
             ],
-        ];
+        ]);
 
         $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $payload);
 

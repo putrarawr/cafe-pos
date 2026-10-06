@@ -29,6 +29,8 @@ class Penjualan extends Model
         'biaya_kirim',
         'aplikator_id',
         'komisi_aplikator',
+        'meja_id',
+        'durasi_meja_menit',
     ];
 
     public function getActivitylogOptions(): LogOptions
@@ -75,5 +77,18 @@ class Penjualan extends Model
     public function aplikator()
     {
         return $this->belongsTo(Aplikator::class, 'aplikator_id');
+    }
+
+    /**
+     * Meja tempat pelanggan duduk. Null untuk take away / delivery.
+     */
+    public function meja()
+    {
+        return $this->belongsTo(Meja::class, 'meja_id');
+    }
+
+    public function sesiMeja()
+    {
+        return $this->hasOne(SesiMeja::class, 'penjualan_id');
     }
 }

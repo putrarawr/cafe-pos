@@ -32,6 +32,7 @@ class OrderPending extends Model
         'aplikator_id',
         'catatan',
         'penjualan_id',
+        'meja_id',
     ];
 
     protected function casts(): array
@@ -87,6 +88,19 @@ class OrderPending extends Model
     public function penjualan()
     {
         return $this->belongsTo(Penjualan::class, 'penjualan_id');
+    }
+
+    /**
+     * Meja yang sedang dipegang order pending ini (null untuk take away / delivery).
+     */
+    public function meja()
+    {
+        return $this->belongsTo(Meja::class, 'meja_id');
+    }
+
+    public function sesiMeja()
+    {
+        return $this->hasOne(SesiMeja::class, 'order_pending_id');
     }
 
     public function getNamaKasirAttribute(): string

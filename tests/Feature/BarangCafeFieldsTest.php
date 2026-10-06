@@ -11,11 +11,12 @@ use App\Models\Karyawan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class BarangCafeFieldsTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     public function test_barang_has_cafe_fields_with_correct_defaults()
     {
@@ -96,7 +97,7 @@ class BarangCafeFieldsTest extends TestCase
         ]);
         $b->gudangs()->attach($gudang->id, ['stok' => 10]);
 
-        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -111,7 +112,7 @@ class BarangCafeFieldsTest extends TestCase
                     'diskon' => 0,
                 ],
             ],
-        ]);
+        ]));
 
         $response->assertStatus(422)
             ->assertJson([
@@ -138,7 +139,7 @@ class BarangCafeFieldsTest extends TestCase
         ]);
         $b->gudangs()->attach($gudang->id, ['stok' => 20]);
 
-        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -153,7 +154,7 @@ class BarangCafeFieldsTest extends TestCase
                     'diskon' => 0,
                 ],
             ],
-        ]);
+        ]));
 
         $response->assertStatus(422)
             ->assertJson([
@@ -260,7 +261,7 @@ class BarangCafeFieldsTest extends TestCase
             'status_aktif' => true,
         ]);
 
-        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -279,7 +280,7 @@ class BarangCafeFieldsTest extends TestCase
                     'jenis_pesanan' => 'delivery',
                 ],
             ],
-        ]);
+        ]));
 
         $response->assertOk();
 
@@ -307,7 +308,7 @@ class BarangCafeFieldsTest extends TestCase
         ]);
         $gudang->barangs()->attach($bKemasan->id, ['stok' => 50]);
 
-        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -323,7 +324,7 @@ class BarangCafeFieldsTest extends TestCase
                     'jenis_pesanan' => 'take_away',
                 ],
             ],
-        ]);
+        ]));
 
         $response->assertOk();
 

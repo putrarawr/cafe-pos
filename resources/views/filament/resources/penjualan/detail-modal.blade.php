@@ -114,6 +114,20 @@
             </div>
         @endif
 
+        @if($record->meja)
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#71717a;margin-top:10px;padding-top:10px;border-top:1px solid #3f3f4680">
+                <span>Meja</span>
+                <span style="font-weight:700;color:#34d399">{{ $record->meja->kode_meja }}</span>
+            </div>
+        @endif
+
+        @if($record->durasi_meja_menit)
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:#71717a;margin-top:6px">
+                <span>Durasi Pemakaian Meja</span>
+                <span style="font-weight:600;color:#d4d4d8;font-variant-numeric:tabular-nums">{{ $record->durasi_meja_menit }} menit</span>
+            </div>
+        @endif
+
         @if($record->komisi_aplikator)
             <div style="display:flex;justify-content:space-between;font-size:12px;color:#71717a;margin-top:6px">
                 <span>Komisi Aplikator (Est.)</span>

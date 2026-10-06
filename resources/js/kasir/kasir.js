@@ -19,6 +19,8 @@ import {
     getOrderPendingDetail,
     batalkanOrderPending,
     verifikasiCetakUlang,
+    getMeja,
+    lepasMeja,
     USE_MOCK,
 } from './api.js';
 
@@ -51,6 +53,11 @@ const state = {
     // order pending: daftar order yang ditahan + order yang lagi dimuat ke keranjang
     orderPending: [],
     orderAktif: null,
+    // meja (dine in): daftar meja dari server + meja yang dipilih untuk keranjang ini
+    meja: [],
+    mejaId: null,
+    mejaInfo: null,
+    dashboardMejaAktif: false,
 };
 
 const rupiah = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
@@ -381,6 +388,13 @@ function setJenisPesananGlobal(tipe) {
         state.aplikatorId = null;
     }
 
+    // Meja hanya untuk dine in; kalau tipe globalnya bukan dine in dan tidak
+    // ada item dine in di keranjang, pilihan meja ikut dilepas.
+    if (tipe !== 'dine_in' && !state.cart.some((i) => i.jenis_pesanan === 'dine_in')) {
+        state.mejaId = null;
+        state.mejaInfo = null;
+    }
+
     if (tipe === 'dine_in') {
         state.cart = state.cart.filter((i) => !i.is_kemasan);
     } else {
@@ -466,6 +480,9 @@ function resetTransaksi() {
     // order yang lagi ditahan sudah selesai (dibayar atau dibatalkan),
     // jadi lepas dari keranjang. Barisnya tetap ada di daftar order pending.
     state.orderAktif = null;
+    // meja lepas dari keranjang; barisnya tetap di dashboard kalau masih ditahan
+    state.mejaId = null;
+    state.mejaInfo = null;
     collapsedOrderGroups.clear();
     bonusToastShown.clear();
     document.querySelectorAll('input[name="bank_transfer"]').forEach((radio) => {
@@ -507,6 +524,8 @@ async function prosesBayar() {
         toast('Pilih gudang dulu', true);
         return;
     }
+    // Meja WAJIB dipilih kalau ada item dine in. Membuka dashboard pilih meja.
+    if (!pastikanMejaTerpilih()) return;
     // Pilihan aplikator WAJIB bila ada item delivery.
     if (state.cart.some((i) => i.jenis_pesanan === 'delivery' && i.jumlah > 0) && !state.aplikatorId) {
         toast('Wajib pilih aplikator delivery (GoFood/GrabFood/ShopeeFood) dulu', true);
@@ -565,6 +584,9 @@ function buildPayload() {
         alamat_pengiriman: state.alamatPengiriman || null,
         biaya_kirim: state.biayaKirim || 0,
         aplikator_id: state.aplikatorId,
+        // null kalau tidak ada item dine in; server tetap memvalidasi &
+        // mengunci mejanya supaya tidak bisa di-order dua kali
+        meja_id: state.mejaId,
         // kalau keranjang ini hasil melanjutkan order pending, server tahu
         // order mana yang harus ditandai selesai setelah dibayar
         order_pending_id: state.orderAktif?.id ?? null,
@@ -689,6 +711,8 @@ async function simpanTransaksi(payload) {
         }
         resetTransaksi();
         await muatUlangOrderPending();
+        // Bayar = meja bebas lagi, jadi peta meja harus disegarkan.
+        await muatUlangMeja();
     } catch (e) {
         toast(e.message ?? 'Gagal menyimpan transaksi', true);
         renderCart();
@@ -746,6 +770,8 @@ async function btnSimpanOrderPending() {
         toast('Selesaikan dulu order pending yang sedang dibuka', true);
         return;
     }
+    // Order pending = pelanggan sudah duduk, jadi meja harus dipilih dulu.
+    if (!pastikanMejaTerpilih()) return;
 
     // Kemasan per item ditambahkan sinkron (bisa async), flush dulu supaya
     // baris kemasan ikut ke-reserve, bukan hilang.
@@ -763,6 +789,8 @@ async function btnSimpanOrderPending() {
         toast(`Order ${order.kode_order} disimpan. Stok sudah ditahan.`);
         resetTransaksi();
         await muatUlangOrderPending();
+        // Meja ikut terkunci selama order ditahan → segarkan peta meja.
+        await muatUlangMeja();
         await muatUlangData(true);
         bukaModalOrderPending();
     } catch (e) {
@@ -989,6 +1017,11 @@ async function lanjutkanOrderPending(id) {
         state.biayaKirim = Number(order.biaya_kirim) || 0;
         state.alamatPengiriman = order.alamat_pengiriman ?? '';
         state.aplikatorId = order.aplikator_id ?? null;
+        // Meja ikut di-restore: order ini masih mengunci mejanya.
+        state.mejaId = order.meja_id ?? null;
+        state.mejaInfo = order.meja_id
+            ? { id: order.meja_id, kode_meja: order.meja_kode ?? '', nama_meja: order.meja_kode ?? '', status: 'terisi' }
+            : null;
 
         const inputDiskon = document.getElementById('input-diskon');
         if (inputDiskon) inputDiskon.value = state.diskonTransaksi > 0 ? String(state.diskonTransaksi) : '';
@@ -1027,13 +1060,284 @@ async function batalkanOrderPendingConfirm(id) {
             state.cart = [];
             render();
         }
-        await muatUlangOrderPending();
+await muatUlangOrderPending();
         await muatUlangData(true);
+        // Batal = pelanggan pergi tanpa bayar → meja ikut bebas.
+        await muatUlangMeja();
     } catch (e) {
         toast(e.message ?? 'Gagal membatalkan order pending', true);
     } finally {
         if (btn) btn.disabled = false;
     }
+}
+
+// ------------------------- MEJA -------------------------
+//
+// Meja cuma relevan untuk pesanan dine in. Dashboard pilih meja muncul otomatis
+// saat kasir tekan "Bayar" atau "Order" kalau keranjang punya item dine in dan
+// mejanya belum dipilih.
+//
+// Warna kartu di dashboard:
+//   hijau  = tersedia, boleh diklik
+//   merah  = terisi (ada order pending di meja itu), tidak boleh diklik
+//   OVER   = terisi dan sudah lewat durasi (overstay)
+//   abu    = tidak aktif (maintenance)
+//
+// Meja bebas kembali begitu order-nya dibayar atau dibatalkan. Kalau ada sesi
+// nyangkut, kasir bisa tekan "Lepas" supaya mejanya bisa dipakai lagi.
+
+let mejaTimer = null;
+
+/** Apakah keranjang punya item yang makan di tempat (butuh meja). */
+function keranjangPakaiMeja() {
+    return state.cart.some((i) => i.jumlah > 0 && (i.jenis_pesanan || state.jenisPesanan) === 'dine_in');
+}
+
+/** Badge di sidebar: jumlah meja yang sedang terkunci. */
+function setBadgeMeja() {
+    const terisi = state.meja.filter((m) => m.status === 'terisi' || m.status === 'overstay').length;
+    document.querySelectorAll('[data-badge-meja]').forEach((el) => {
+        el.textContent = terisi > 99 ? '99+' : String(terisi);
+        el.classList.toggle('hidden', terisi === 0);
+    });
+}
+
+/** Ambil status meja terbaru dari server (yang menentukan mengunci atau tidak). */
+async function muatUlangMeja() {
+    if (!state.gudangId) {
+        state.meja = [];
+        renderDashboardMeja();
+        setBadgeMeja();
+        return;
+    }
+    try {
+        const res = await getMeja(state.gudangId);
+        state.meja = res.items ?? [];
+    } catch (e) {
+        toast(e.message ?? 'Gagal memuat daftar meja', true);
+    }
+    renderDashboardMeja();
+    setBadgeMeja();
+}
+
+/** Buka dashboard pilih meja. Dipanggil otomatis sebelum bayar / tahan pesanan. */
+async function bukaDashboardMeja() {
+    state.dashboardMejaAktif = true;
+    const modal = document.getElementById('modal-dashboard-meja');
+    if (modal) {
+        modal.classList.remove('hidden');
+        document.getElementById('meja-grid')?.classList.add('hidden');
+        document.getElementById('meja-loading')?.classList.remove('hidden');
+    }
+    await muatUlangMeja();
+    document.getElementById('meja-loading')?.classList.add('hidden');
+    document.getElementById('meja-grid')?.classList.remove('hidden');
+
+    // Timer supaya sisa waktu & status dari kasir lain ikut bergerak tanpa reload.
+    clearInterval(mejaTimer);
+    mejaTimer = setInterval(() => {
+        if (state.dashboardMejaAktif) muatUlangMeja();
+    }, 15000);
+}
+
+function tutupDashboardMeja() {
+    state.dashboardMejaAktif = false;
+    clearInterval(mejaTimer);
+    mejaTimer = null;
+    document.getElementById('modal-dashboard-meja')?.classList.add('hidden');
+}
+
+/** "1j 05m" / "45m" */
+function formatDurasiMeja(menit) {
+    const m = Math.max(0, Number(menit) || 0);
+    if (m < 60) return `${m}m`;
+    return `${Math.floor(m / 60)}j ${String(m % 60).padStart(2, '0')}m`;
+}
+
+/**
+ * Kode meja ("Meja 01") dan keterangannya ("Indoor") terpisah. Keterangan
+ * dikosongkan kalau isinya sama dengan kode supaya tidak tampil dua kali.
+ */
+function splitNamaMeja(meja) {
+    const kode = String(meja?.kode_meja ?? '').trim();
+    const nama = String(meja?.nama_meja ?? '').trim();
+
+    return {
+        kode,
+        nama: nama.toLowerCase() === kode.toLowerCase() ? '' : nama,
+    };
+}
+
+/** Label meja siap tampil: "Meja 01" atau "Meja 01 · Indoor". */
+function labelMeja(meja) {
+    const { kode, nama } = splitNamaMeja(meja);
+    if (!kode) return nama;
+
+    return nama ? `${kode} · ${nama}` : kode;
+}
+
+/** Area meja yang belum tampil di label, supaya tidak dobel. */
+function areaMeja(meja) {
+    const { nama } = splitNamaMeja(meja);
+    const area = String(meja?.area ?? '').trim();
+    if (!area || nama.toLowerCase() === area.toLowerCase()) return '';
+
+    return area;
+}
+
+function templateKartuMeja(m) {
+    const terpilih = Number(state.mejaId) === Number(m.id);
+    const over = m.status === 'overstay';
+    const terisi = over || m.status === 'terisi';
+    const nonaktif = m.status === 'tidak_aktif';
+    const bisaKlik = !terisi && !nonaktif;
+
+    const warna = over
+        ? 'bg-rose-950 border-rose-800 text-rose-100'
+        : terisi
+        ? 'bg-rose-50 border-rose-200 text-rose-900'
+        : nonaktif
+        ? 'bg-zinc-100 border-zinc-200 text-zinc-400'
+        : terpilih
+        ? 'bg-emerald-600 border-emerald-700 text-white shadow-lg shadow-emerald-600/25'
+        : 'bg-emerald-50 border-emerald-200 text-emerald-900 hover:border-emerald-500 hover:bg-emerald-100';
+
+    const badge = over
+        ? `<span class="inline-flex items-center gap-1 text-[10px] font-black px-1.5 py-0.5 rounded-md bg-rose-500 text-white tabular-nums">
+               <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+               OVER ${formatDurasiMeja(m.lama_menit - m.durasi_menit)}
+           </span>`
+        : terisi
+        ? `<span class="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-200 text-rose-800 tabular-nums">
+               <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+               Sisa ${formatDurasiMeja(m.sisa_menit)}
+           </span>`
+        : `<span class="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-200 text-emerald-800 tabular-nums">
+               ${formatDurasiMeja(m.durasi_menit)}
+           </span>`;
+
+const info = terisi
+        ? `<div class="mt-1.5 text-[10px] leading-tight space-y-0.5">
+               <p class="font-bold truncate">${escapeHtml(m.kode_order || m.nomer_nota || 'Meja terisi')}</p>
+               <p class="opacity-75 truncate">${rupiah(m.total)}</p>
+            </div>`
+        : `<div class="mt-1.5 text-[10px] font-semibold opacity-70">
+               ${m.kapasitas} orang${areaMeja(m) ? ' · ' + escapeHtml(areaMeja(m)) : ''}
+            </div>`;
+
+    const tombolLepas = terisi && m.sesi_id && !m.order_pending_id
+        ? `<button type="button" data-meja-lepas="${m.sesi_id}" data-meja-kode="${escapeHtml(m.kode_meja)}"
+               class="mt-2 w-full text-[10px] font-bold rounded-lg border border-rose-300 bg-white/70 text-rose-700 hover:bg-white py-1 transition-colors cursor-pointer">
+               Lepas
+           </button>`
+        : '';
+
+    const centang = terpilih
+        ? `<span class="absolute top-2 right-2 w-5 h-5 rounded-full bg-white/25 flex items-center justify-center">
+               <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>
+           </span>`
+        : '';
+
+    return `<button type="button" data-meja-pilih="${m.id}" ${bisaKlik ? '' : 'disabled'}
+            class="relative flex flex-col items-start text-left p-3 rounded-2xl border-2 transition-all ${warna} ${bisaKlik ? 'cursor-pointer active:scale-[0.98]' : 'cursor-not-allowed opacity-90'}">
+        ${centang}
+        <div class="flex items-center gap-1.5 w-full">
+            <span class="text-base font-black tabular-nums truncate">${escapeHtml(m.kode_meja)}</span>
+            ${badge}
+        </div>
+        ${m.nama_meja && m.nama_meja !== m.kode_meja ? `<span class="text-[11px] font-semibold truncate w-full">${escapeHtml(m.nama_meja)}</span>` : ''}
+        ${info}
+        ${tombolLepas}
+    </button>`;
+}
+
+function renderDashboardMeja() {
+    const wrap = document.getElementById('meja-grid');
+    if (!wrap) return;
+
+    // Jumlah tersedia dipakai untuk judul ringkasan.
+    const tersedia = state.meja.filter((m) => m.status === 'tersedia').length;
+    const lbl = document.getElementById('meja-ringkas');
+    if (lbl) {
+        lbl.textContent = state.meja.length === 0
+            ? ''
+            : `${tersedia} dari ${state.meja.length} meja tersedia`;
+    }
+
+    if (state.meja.length === 0) {
+        wrap.innerHTML = `<div class="col-span-full py-16 text-center">
+            <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-zinc-100 border border-zinc-200 flex items-center justify-center">
+                <svg class="w-6 h-6 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 20h20"/><path d="M4 20V10"/><path d="M20 20V10"/><path d="M12 4v16"/><path d="M2 10h20"/>
+                </svg>
+            </div>
+            <p class="text-sm font-bold text-zinc-700">Belum ada meja di gudang ini</p>
+            <p class="text-xs text-zinc-400 mt-0.5">Tambahkan lewat Admin &rarr; Meja dulu.</p>
+        </div>`;
+        return;
+    }
+
+    wrap.innerHTML = state.meja.map(templateKartuMeja).join('');
+}
+
+/** Kasir menekan kartu meja yang tersedia. */
+function pilihMeja(id) {
+    const meja = state.meja.find((m) => Number(m.id) === Number(id));
+    if (!meja) return;
+    if (meja.status === 'terisi' || meja.status === 'overstay') {
+        toast(`${meja.kode_meja} sedang dipakai`, true);
+        return;
+    }
+    if (meja.status === 'tidak_aktif') {
+        toast(`${meja.kode_meja} sedang tidak aktif`, true);
+        return;
+    }
+
+    state.mejaId = meja.id;
+    state.mejaInfo = meja;
+    tutupDashboardMeja();
+    render();
+    toast(`${meja.kode_meja} dipilih.`);
+}
+
+/** Lepas meja yang sesi-nya nyangkut supaya bisa dipakai lagi. */
+async function lepasMejaSesi(sesiId, kode) {
+    const ok = window.confirm(
+        `Lepas ${kode}? Meja akan ditandai tersedia lagi. Kalau masih ada order pending di meja ini, batalkan ordernya dulu.`
+    );
+    if (!ok) return;
+
+    const btn = document.querySelector(`[data-meja-lepas="${sesiId}"]`);
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await lepasMeja(sesiId);
+        toast(res.message ?? `${kode} sudah dilepas.`);
+        await muatUlangMeja();
+    } catch (e) {
+        toast(e.message ?? 'Gagal lepas meja', true);
+        if (btn) btn.disabled = false;
+    }
+}
+
+/**
+ * Guard sebelum bayar / tahan pesanan: kalau keranjang makan di tempat,
+ * meja WAJIB dipilih dulu. Dipakai juga sebagai pemicu buka dashboard.
+ *
+ * @returns {boolean} true kalau boleh lanjut
+ */
+function pastikanMejaTerpilih() {
+    if (!keranjangPakaiMeja()) {
+        // Tidak ada dine in: meja tidak relevan, buang biar tidak ikut terkirim.
+        state.mejaId = null;
+        state.mejaInfo = null;
+        return true;
+    }
+    if (state.mejaId) return true;
+
+    bukaDashboardMeja();
+    toast('Pilih meja dulu untuk pesanan dine in');
+    return false;
 }
 
 // ------------------------- STRUK -------------------------
@@ -1215,6 +1519,20 @@ function tampilkanStruk(payload) {
                </div>`
             : '';
 
+        // Meja + durasi dipakai hanya kalau pesannya dine in.
+        const { kode: kodeMeja, nama: namaMejaLengkap } = splitNamaMeja({
+            kode_meja: payload.meja ?? state.mejaInfo?.kode_meja ?? '',
+            nama_meja: payload.meja_nama ?? state.mejaInfo?.nama_meja ?? '',
+        });
+        const durasiMeja = Number(payload.durasi_meja_menit ?? 0);
+        const mejaHeaderHtml = kodeMeja
+            ? `<div class="mt-1.5 pt-1.5 border-t border-dotted border-zinc-400 text-center">
+                <p class="text-xs font-bold text-zinc-900 tracking-wide uppercase">[${escapeHtml(kodeMeja)}]</p>
+                ${namaMejaLengkap ? `<p class="text-xs text-zinc-700 font-normal mt-0.5">${escapeHtml(namaMejaLengkap)}</p>` : ''}
+                ${durasiMeja > 0 ? `<p class="text-xs text-zinc-700 font-normal mt-0.5"><span class="font-semibold">Durasi:</span> ${escapeHtml(formatDurasiMeja(durasiMeja))}</p>` : ''}
+               </div>`
+            : '';
+
         body.innerHTML = `
             <div class="text-center font-sans">
                 <h2 class="font-bold text-base text-zinc-900 tracking-tight">${escapeHtml(toko.nama || 'Toko PKL')}</h2>
@@ -1223,6 +1541,7 @@ function tampilkanStruk(payload) {
                 <p class="text-xs text-zinc-700 font-normal mt-0.5">${escapeHtml(gudangNama)}</p>
                 <p class="text-xs text-zinc-700 font-normal mt-0.5">Nota: ${escapeHtml(payload.nomer_nota)} &bull; ${escapeHtml(fullDateTime)}</p>
                 <p class="text-xs text-zinc-700 font-normal mt-0.5">Kasir: ${escapeHtml(namaKasir)}</p>
+                ${mejaHeaderHtml}
                 ${deliveryHeaderHtml}
             </div>
 
@@ -2185,6 +2504,46 @@ function renderCart() {
         const hasDelivery = state.cart.some((i) => i.jenis_pesanan === 'delivery' && i.jumlah > 0);
         const hasTAorDel = state.cart.some((i) => (i.jenis_pesanan === 'delivery' || i.jenis_pesanan === 'take_away') && i.jumlah > 0);
 
+        // Blok meja muncul hanya kalau ada item dine in. Tanpa item dine in
+        // pilihan meja dilepas supaya tidak ikut terkirim ke server.
+        const hasDineIn = keranjangPakaiMeja();
+        if (!hasDineIn && state.mejaId !== null) {
+            state.mejaId = null;
+            state.mejaInfo = null;
+        }
+
+        const mejaPicker = hasDineIn ? `
+            <div data-meja-summary class="rounded-2xl border ${state.mejaId ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'} p-3.5 space-y-2.5 mt-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-zinc-700 flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2 20h20"/><path d="M4 20V10"/><path d="M20 20V10"/><path d="M12 4v16"/><path d="M2 10h20"/>
+                        </svg>
+                        Meja
+                    </span>
+                    <span class="text-[10px] font-bold uppercase tracking-wide ${state.mejaId ? 'text-emerald-600' : 'text-amber-600'}">
+                        ${state.mejaId ? 'Dipilih' : 'Wajib'}
+                    </span>
+                </div>
+                ${state.mejaId ? `
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="text-sm font-black text-zinc-900 truncate">${escapeHtml(labelMeja(state.mejaInfo ?? {}))}</p>
+                            <p class="text-[10px] text-zinc-500">${state.mejaInfo?.kapasitas ?? '-'} orang${areaMeja(state.mejaInfo ?? {}) ? ' · ' + escapeHtml(areaMeja(state.mejaInfo ?? {})) : ''}</p>
+                        </div>
+                        <button type="button" data-meja-ubah
+                            class="shrink-0 text-[10px] font-bold text-zinc-600 hover:text-zinc-900 underline cursor-pointer">Ubah</button>
+                    </div>
+                ` : `
+                    <p class="text-[10px] text-amber-700">Pesanan dine in wajib memilih meja sebelum dibayar atau ditahan.</p>
+                    <button type="button" data-meja-ubah
+                        class="w-full bg-zinc-900 hover:bg-zinc-800 active:scale-[0.99] text-white font-bold rounded-xl py-2 text-xs transition cursor-pointer">
+                        Pilih Meja
+                    </button>
+                `}
+            </div>`
+            : '';
+
         // Pilihan aplikator delivery muncul & WAJIB Jika ada item delivery
         if (!hasDelivery && state.aplikatorId !== null) {
             state.aplikatorId = null;
@@ -2254,7 +2613,7 @@ function renderCart() {
             </div>`
             : '';
 
-        wrap.innerHTML = cardsHtml + aplikatorPicker + deliveryFields;
+        wrap.innerHTML = cardsHtml + mejaPicker + aplikatorPicker + deliveryFields;
     }
 
     const badge = document.getElementById('badge-cart-count');
@@ -2618,6 +2977,8 @@ function render() {
     renderGudangStokInfo();
     renderBannerOrderAktif();
     renderBadgeOrderPendingHeader();
+    renderDashboardMeja();
+    setBadgeMeja();
 }
 
 function fokusCartRow() {
@@ -2990,6 +3351,8 @@ async function init() {
                 state.gudangId = nextGudangId;
                 state.cart = [];
                 highlightedIdx = -1;
+                // Meja discope per gudang, jadi peta meja ikut ganti.
+                muatUlangMeja();
                 render();
                 const input = document.getElementById('input-search');
                 if (input) input.focus();
@@ -3023,6 +3386,24 @@ async function init() {
     document.getElementById('btn-tutup-order-pending')?.addEventListener('click', tutupModalOrderPending);
     document.getElementById('btn-tutup-order-pending-bawah')?.addEventListener('click', tutupModalOrderPending);
     document.getElementById('btn-lepas-order-aktif')?.addEventListener('click', lepasOrderAktif);
+
+    // Dashboard pilih meja
+    document.getElementById('btn-daftar-meja')?.addEventListener('click', bukaDashboardMeja);
+    document.getElementById('btn-daftar-meja-mobile')?.addEventListener('click', bukaDashboardMeja);
+    document.getElementById('btn-tutup-dashboard-meja')?.addEventListener('click', tutupDashboardMeja);
+    document.getElementById('btn-tutup-dashboard-meja-bawah')?.addEventListener('click', tutupDashboardMeja);
+
+    // Delegasi klik kartu meja & tombol Lepas karena grid dirender ulang tiap muat.
+    document.getElementById('meja-grid')?.addEventListener('click', (e) => {
+        const btnLepas = e.target.closest('[data-meja-lepas]');
+        if (btnLepas) {
+            e.stopPropagation();
+            lepasMejaSesi(btnLepas.dataset.mejaLepas, btnLepas.dataset.mejaKode);
+            return;
+        }
+        const kartu = e.target.closest('[data-meja-pilih]');
+        if (kartu) pilihMeja(kartu.dataset.mejaPilih);
+    });
 
     // Delegasi klik untuk baris order (Lanjut / Batal) karena dirender ulang tiap muat.
     document.getElementById('order-pending-list')?.addEventListener('click', (e) => {
@@ -3318,6 +3699,12 @@ async function init() {
                 state.aplikatorId = Number(aplikatorOpt.dataset.aplikatorOption);
                 updateCartTierPrices();
                 renderCart();
+                return;
+            }
+
+            // Blok ringkasan meja di keranjang → buka dashboard pilih meja.
+            if (e.target.closest('[data-meja-ubah]')) {
+                bukaDashboardMeja();
                 return;
             }
 
@@ -4015,7 +4402,7 @@ if (cartIdx < 0 || cartIdx >= state.cart.length) return;
         document.getElementById('badge-mock')?.classList.remove('hidden');
     }
 
-    ['modal-struk', 'modal-riwayat', 'modal-konfirmasi-reset', 'modal-konfirmasi-gudang', 'modal-konfirmasi-hapus', 'modal-konfirmasi-nontunai', 'modal-konfirmasi-diskon', 'modal-password-cetak'].forEach((id) => {
+    ['modal-struk', 'modal-riwayat', 'modal-order-pending', 'modal-dashboard-meja', 'modal-konfirmasi-reset', 'modal-konfirmasi-gudang', 'modal-konfirmasi-hapus', 'modal-konfirmasi-nontunai', 'modal-konfirmasi-diskon', 'modal-password-cetak'].forEach((id) => {
         pasangFocusTrap(document.getElementById(id));
     });
 
@@ -4052,6 +4439,11 @@ if (cartIdx < 0 || cartIdx >= state.cart.length) return;
     // Order pending dimuat terpisah supaya kegagalan di sini tidak memblokir
     // layar kasir. Badge diheader tetap menampilkan jumlahnya.
     muatUlangOrderPending();
+
+    // Peta meja untuk badge sidebar. Kalau belum ada gudang yang dipilih
+    // (mis. gudang dimuat terlambat), dibiarkan kosong dan dimuat ulang
+    // setiap kali gudang berubah.
+    muatUlangMeja();
 }
 
 init().catch((e) => {

@@ -9,11 +9,12 @@ use App\Models\JenisBarang;
 use App\Models\Penjualan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class KasirOngkirGuardTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     private function buatUserDanGudang(): array
     {
@@ -54,7 +55,8 @@ class KasirOngkirGuardTest extends TestCase
         [$user, $gudang] = $this->buatUserDanGudang();
         $kopi = $this->buatBarangKopi($gudang);
 
-        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        // dine_in → meja wajib dipilih, sisanya (take_away/delivery) tidak.
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -72,7 +74,7 @@ class KasirOngkirGuardTest extends TestCase
                     'jenis_pesanan' => 'dine_in',
                 ],
             ],
-        ]);
+        ]));
 
         $response->assertOk();
 

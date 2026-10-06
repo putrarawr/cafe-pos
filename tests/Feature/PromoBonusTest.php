@@ -8,11 +8,12 @@ use App\Models\JenisBarang;
 use App\Models\PromoBonus;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class PromoBonusTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     public function test_scope_active_filtering()
     {
@@ -77,7 +78,7 @@ class PromoBonusTest extends TestCase
             'is_aktif' => true,
         ]);
 
-        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -100,7 +101,7 @@ class PromoBonusTest extends TestCase
                     'is_bonus' => true,
                 ],
             ],
-        ]);
+        ]));
 
         $response->assertOk();
 

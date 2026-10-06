@@ -11,11 +11,12 @@ use App\Models\User;
 use App\Services\StokService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class OrderPendingTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     private User $user;
 
@@ -65,11 +66,15 @@ class OrderPendingTest extends TestCase
     }
 
     /**
+     * Semua detail di tes ini dine in, jadi meja WAJIB ikut di payload
+     * (meja memang dipilih untuk pesanan dine in). Tiap panggilan dapat meja
+     * baru supaya beberapa order pending dalam satu test tidak berebut meja.
+     *
      * @param  array<int, array<string, mixed>>  $details
      */
     private function payloadOrder(array $details, array $tambahan = []): array
     {
-        return array_merge([
+        $payload = array_merge([
             'gudang_id' => $this->gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -78,6 +83,12 @@ class OrderPendingTest extends TestCase
             'bayar' => 0,
             'details' => $details,
         ], $tambahan);
+
+        if (! array_key_exists('meja_id', $tambahan)) {
+            $payload['meja_id'] = $this->buatMejaAktif($this->gudang)->id;
+        }
+
+        return $payload;
     }
 
     /**

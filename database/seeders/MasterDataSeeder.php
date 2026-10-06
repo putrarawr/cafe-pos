@@ -28,7 +28,10 @@ class MasterDataSeeder extends Seeder
             Gudang::firstOrCreate(['nama_gudang' => $g['nama_gudang']], $g);
         }
 
-        // 2. Seed 5 Supplier
+        // 2. Seed Meja untuk setiap gudang
+        $this->call(MejaSeeder::class);
+
+        // 3. Seed 5 Supplier
         $suppliers = [
             ['nama_supplier' => 'PT. Gudang Garam Tbk', 'no_telepon' => '081234567801', 'alamat' => 'Kediri, Jawa Timur', 'status' => 'aktif'],
             ['nama_supplier' => 'PT. Indofood Sukses Makmur', 'no_telepon' => '081234567802', 'alamat' => 'Jakarta Selatan', 'status' => 'aktif'],
@@ -41,7 +44,7 @@ class MasterDataSeeder extends Seeder
             Supplier::firstOrCreate(['nama_supplier' => $s['nama_supplier']], $s);
         }
 
-        // 3. Seed 5 Kategori / Jenis Barang & Master Produk Lengkap
+        // 4. Seed 5 Kategori / Jenis Barang & Master Produk Lengkap
         $categories = [
             [
                 'nama_jenis' => 'Rokok',
@@ -437,6 +440,11 @@ class MasterDataSeeder extends Seeder
             ],
         ];
 
+        // Foto produk ikut dipasang di sini supaya tidak hilang kalau master
+        // produk di-seed ulang. Ditambah lewat migration juga, tapi seeder
+        // tetap perlu supaya instalasi baru langsung lengkap.
+        $fotoProduk = require database_path('seeders/data/foto_produk.php');
+
         $allGudangs = Gudang::all();
 
         foreach ($categories as $cat) {
@@ -449,6 +457,10 @@ class MasterDataSeeder extends Seeder
             );
 
             foreach ($cat['items'] as $itemData) {
+                if (isset($fotoProduk[$itemData['nama_barang']])) {
+                    $itemData['gambar'] = $fotoProduk[$itemData['nama_barang']];
+                }
+
                 $barang = Barang::updateOrCreate(
                     [
                         'jenis_barang_id' => $jenis->id,

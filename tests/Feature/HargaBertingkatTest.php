@@ -7,11 +7,12 @@ use App\Models\Gudang;
 use App\Models\JenisBarang;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Concerns\PunyaMeja;
 use Tests\TestCase;
 
 class HargaBertingkatTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, PunyaMeja;
 
     public function test_perhitungan_harga_tier_persen()
     {
@@ -84,7 +85,7 @@ class HargaBertingkatTest extends TestCase
 
         $barang->gudangs()->attach($gudang->id, ['stok' => 50]);
 
-        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        $response = $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -98,7 +99,7 @@ class HargaBertingkatTest extends TestCase
                     'satuan' => 'Pcs',
                 ],
             ],
-        ]);
+        ]));
 
         $response->assertOk();
         $this->assertDatabaseHas('penjualan', [
@@ -129,7 +130,7 @@ class HargaBertingkatTest extends TestCase
 
         $barang->gudangs()->attach($gudang->id, ['stok' => 50]);
 
-        $this->actingAs($user)->postJson(route('kasir.simpan'), [
+        $this->actingAs($user)->postJson(route('kasir.simpan'), $this->denganMeja([
             'gudang_id' => $gudang->id,
             'tanggal' => date('Y-m-d'),
             'diskon' => 0,
@@ -143,7 +144,7 @@ class HargaBertingkatTest extends TestCase
                     'satuan' => 'Pcs',
                 ],
             ],
-        ])->assertOk();
+        ]))->assertOk();
 
         // harga normal disimpan, potongan dari harga bertingkat dicatat di detail_jual
         $this->assertDatabaseHas('detail_jual', [

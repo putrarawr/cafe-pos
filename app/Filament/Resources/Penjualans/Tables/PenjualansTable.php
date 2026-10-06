@@ -7,7 +7,6 @@ use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
-use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\View\View;
 
 class PenjualansTable
@@ -62,6 +61,20 @@ class PenjualansTable
                     ->color('info')
                     ->placeholder('—'),
 
+                TextColumn::make('meja.kode_meja')
+                    ->label('Meja')
+                    ->badge()
+                    ->color('success')
+                    ->placeholder('—')
+                    ->sortable(),
+
+                TextColumn::make('durasi_meja_menit')
+                    ->label('Durasi Meja')
+                    ->suffix(' mnt')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 TextColumn::make('created_at')
                     ->label('Waktu Transaksi')
                     ->dateTime('d M Y H:i')
@@ -92,6 +105,12 @@ class PenjualansTable
                 SelectFilter::make('aplikator_id')
                     ->label('Aplikator')
                     ->relationship('aplikator', 'nama_aplikator'),
+
+                SelectFilter::make('meja_id')
+                    ->label('Meja')
+                    ->relationship('meja', 'kode_meja')
+                    ->searchable()
+                    ->preload(),
             ])
             ->recordActions([
                 Action::make('view_detail')
@@ -99,7 +118,7 @@ class PenjualansTable
                     ->modalHeading(fn (Penjualan $record) => "Detail Penjualan #{$record->nomer_nota}")
                     ->modalContent(fn (Penjualan $record): View => view(
                         'filament.resources.penjualan.detail-modal',
-                        ['record' => $record->load('details.barang', 'karyawan', 'user', 'gudang', 'aplikator')]
+                        ['record' => $record->load('details.barang', 'karyawan', 'user', 'gudang', 'aplikator', 'meja')]
                     ))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Tutup'),
